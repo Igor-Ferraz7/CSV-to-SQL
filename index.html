@@ -16,6 +16,7 @@
   --orange:#ff7043;--orange-dim:rgba(255,112,67,.12);
   --red:#ff4d6d;--red-dim:rgba(255,77,109,.1);
   --yellow:#ffd740;
+  --purple:#b388ff;--purple-dim:rgba(179,136,255,.12);
   --text:#b8cfe0;--text-hi:#ddf0ff;--text-dim:#526a82;
   --font:'IBM Plex Sans',system-ui,sans-serif;
   --mono:'IBM Plex Mono','Courier New',monospace;
@@ -71,6 +72,8 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 .btn-primary:hover{background:#33d4ff;box-shadow:0 0 22px var(--cyan-glow)}
 .btn-success{background:var(--green);color:#000;font-weight:700;border:none}
 .btn-success:hover{background:#33eb8f;box-shadow:0 0 14px var(--green-dim)}
+.btn-purple{background:var(--purple);color:#000;font-weight:700;border:none}
+.btn-purple:hover{background:#c9a8ff;box-shadow:0 0 14px var(--purple-dim)}
 .btn-danger{background:transparent;border-color:var(--red);color:var(--red)}
 .btn-danger:hover{background:var(--red-dim)}
 .btn-sm{padding:4px 9px;font-size:11px}
@@ -151,9 +154,27 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 .cmap-table input[type=text]{width:100%;padding:3px 5px;font-size:11px;font-family:var(--mono)}
 .cmap-table select{width:100%;padding:3px 4px;font-size:11px}
 .chk-center{display:flex;align-items:center;justify-content:center}
-.legend-row{margin-top:8px;font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:6px}
+.legend-row{margin-top:8px;font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .badge{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:700;font-family:var(--mono)}
 .badge-key{background:var(--orange-dim);color:var(--orange)}
+.badge-fn{background:var(--purple-dim);color:var(--purple)}
+
+/* ── DB COLUMN CELL WITH ƒ BUTTON ── */
+.db-col-cell{display:flex;gap:3px;align-items:center}
+.db-col-cell input{flex:1;min-width:0}
+.fn-btn{
+  flex-shrink:0;width:22px;height:22px;border-radius:4px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text-dim);cursor:pointer;font-family:var(--mono);
+  font-size:11px;font-weight:700;font-style:italic;
+  transition:all var(--t);
+}
+.fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
+.fn-btn.active{
+  background:var(--purple);border-color:var(--purple);color:#000;
+  box-shadow:0 0 8px var(--purple-dim);
+}
 
 /* ── ADVANCED ── */
 .adv-toggle{
@@ -249,6 +270,7 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:900}
 .modal-ov.open{display:flex}
 .modal{background:var(--surface2);border:1px solid var(--border-hi);border-radius:var(--r2);padding:20px;width:400px;max-height:82vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.6)}
+.modal-lg{width:560px}
 .modal-head{font-size:14px;font-weight:700;color:var(--text-hi);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
 .modal-x{cursor:pointer;color:var(--text-dim);font-size:20px;line-height:1;transition:color var(--t)}
 .modal-x:hover{color:var(--red)}
@@ -258,6 +280,94 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 .prof-save{display:flex;gap:8px}
 .prof-save input{flex:1}
 .hidden{display:none!important}
+
+/* ── FUNCTION MODAL ── */
+.fn-modal-head{
+  display:flex;align-items:center;gap:10px;margin-bottom:14px;
+}
+.fn-modal-head .fn-icon{
+  width:32px;height:32px;border-radius:7px;
+  background:linear-gradient(135deg,var(--purple),#7c4dff);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-style:italic;font-weight:700;
+  color:#000;font-size:17px;flex-shrink:0;
+}
+.fn-modal-head .fn-title{flex:1}
+.fn-modal-head h3{font-size:14px;font-weight:700;color:var(--text-hi);letter-spacing:-.2px}
+.fn-modal-head .fn-sub{font-size:11px;color:var(--text-dim);margin-top:1px}
+
+.fn-section{margin-bottom:14px}
+.fn-section-label{
+  font-size:10px;font-weight:700;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;
+}
+.fn-section select,.fn-section input{width:100%;padding:7px 10px;font-size:12px}
+
+.fn-params{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);padding:11px;display:flex;flex-direction:column;gap:9px;
+}
+.fn-param-row{display:flex;flex-direction:column;gap:3px}
+.fn-param-label{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.3px}
+.fn-param-hint{font-size:10px;color:var(--text-dim);font-style:italic;margin-top:1px}
+.fn-no-params{font-size:11px;color:var(--text-dim);text-align:center;padding:6px 0;font-style:italic}
+
+.fn-hint{
+  background:var(--cyan-dim);border:1px solid rgba(0,200,255,.25);
+  border-radius:var(--r);padding:7px 10px;font-size:11px;color:var(--cyan);
+  margin-top:8px;display:flex;gap:6px;align-items:flex-start;
+}
+.fn-warn{
+  background:var(--orange-dim);border:1px solid rgba(255,112,67,.3);
+  border-radius:var(--r);padding:7px 10px;font-size:11px;color:var(--orange);
+  margin-top:8px;display:flex;gap:6px;align-items:flex-start;
+}
+
+.fn-preview{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;
+}
+.fn-preview-head{
+  padding:7px 11px;background:var(--surface3);font-size:10px;
+  font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.fn-preview-body{padding:0}
+.fn-preview-row{
+  display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;
+  padding:7px 11px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;
+}
+.fn-preview-row:first-child{border-top:none}
+.fn-prev-in{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fn-prev-arrow{color:var(--purple);font-weight:700}
+.fn-prev-out{color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.fn-prev-out.empty-out{color:var(--text-dim);font-style:italic}
+
+.fn-modal-actions{
+  display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
+}
+.fn-modal-actions .btn{flex:1;justify-content:center;padding:8px 12px;font-size:12px}
+
+/* List view inside fn modal (when called from advanced options) */
+.fn-col-list{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;margin-bottom:12px;
+  max-height:200px;overflow-y:auto;
+}
+.fn-col-list-item{
+  display:flex;align-items:center;gap:8px;padding:8px 11px;
+  border-bottom:1px solid var(--border);cursor:pointer;
+  transition:background var(--t);
+}
+.fn-col-list-item:last-child{border-bottom:none}
+.fn-col-list-item:hover{background:var(--surface2)}
+.fn-col-list-item.selected{background:var(--purple-dim);border-left:3px solid var(--purple);padding-left:8px}
+.fn-col-list-name{flex:1;font-family:var(--mono);font-size:11.5px;color:var(--text)}
+.fn-col-list-fn{
+  font-family:var(--mono);font-size:10px;font-weight:700;font-style:italic;
+  background:var(--purple-dim);color:var(--purple);padding:2px 7px;border-radius:3px;
+}
+.fn-col-list-empty{font-family:var(--mono);font-size:10px;color:var(--text-dim);font-style:italic}
 
 /* ── TABLE SCHEMA HISTORY ── */
 .restore-banner{
@@ -450,6 +560,18 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
               <input type="text" id="optDV" placeholder="Ex: 0 ou N/A">
             </div>
 
+            <!-- ── BOTÃO FUNÇÕES DE COLUNA ── -->
+            <div style="border-top:1px solid var(--border);padding-top:11px;margin-top:4px">
+              <button class="btn btn-purple btn-sm" onclick="openFnPickerModal()" style="width:100%;justify-content:center;padding:8px;font-size:12px">
+                <span style="font-family:var(--mono);font-style:italic;font-weight:700">ƒ</span>
+                <span>Funções de Coluna</span>
+                <span id="fnCountBadge" style="background:rgba(0,0,0,.18);color:#000;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:800;margin-left:auto" class="hidden">0</span>
+              </button>
+              <div style="font-size:10px;color:var(--text-dim);margin-top:5px;line-height:1.4">
+                Aplica transformações (sequencial, sanitização, etc.) a colunas específicas antes da geração do SQL.
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -502,6 +624,9 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<!-- MODAL: Perfis & Tabelas Salvas                       -->
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
 <div class="modal-ov" id="profileModal" onclick="if(event.target===this)closeProfileModal()">
   <div class="modal">
     <div class="modal-tabs">
@@ -511,7 +636,6 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
       <span class="modal-x" onclick="closeProfileModal()" style="padding:10px 0 10px 10px">×</span>
     </div>
 
-    <!-- PANE: Perfis -->
     <div class="modal-pane active" id="panePerfis">
       <div class="prof-list" id="profList">
         <div style="color:var(--text-dim);font-size:12px;padding:6px 0">Nenhum perfil salvo.</div>
@@ -522,7 +646,6 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
       </div>
     </div>
 
-    <!-- PANE: Tabelas Salvas -->
     <div class="modal-pane" id="paneTabelas">
       <div id="tblHistList" style="max-height:320px;overflow-y:auto;margin-bottom:12px">
         <div class="tbl-empty">Nenhuma tabela com config salva ainda.<br><span style="font-size:10px;opacity:.6">Gere um SQL para salvar automaticamente.</span></div>
@@ -535,6 +658,73 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
   </div>
 </div>
 
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<!-- MODAL: Função de Coluna individual                   -->
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="modal-ov" id="fnModal" onclick="if(event.target===this)closeFnModal()">
+  <div class="modal modal-lg">
+    <div class="fn-modal-head">
+      <div class="fn-icon">ƒ</div>
+      <div class="fn-title">
+        <h3>Função de transformação</h3>
+        <div class="fn-sub">Coluna: <strong id="fnModalColName" style="color:var(--purple);font-family:var(--mono)">—</strong></div>
+      </div>
+      <span class="modal-x" onclick="closeFnModal()">×</span>
+    </div>
+
+    <div class="fn-section">
+      <div class="fn-section-label">Função a aplicar</div>
+      <select id="fnTypeSel" onchange="onFnTypeChange()"></select>
+    </div>
+
+    <div class="fn-section" id="fnParamsSection">
+      <div class="fn-section-label">Parâmetros</div>
+      <div class="fn-params" id="fnParamsBox"></div>
+    </div>
+
+    <div id="fnHintBox"></div>
+
+    <div class="fn-section">
+      <div class="fn-section-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Preview (3 primeiras linhas)</span>
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;font-style:italic">entrada → saída</span>
+      </div>
+      <div class="fn-preview">
+        <div class="fn-preview-body" id="fnPreviewBody"></div>
+      </div>
+    </div>
+
+    <div class="fn-modal-actions">
+      <button class="btn btn-danger" onclick="clearFnAndClose()">🗑 Remover função</button>
+      <button class="btn btn-purple" onclick="applyFnAndClose()">✓ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<!-- MODAL: Picker — escolher coluna para configurar      -->
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="modal-ov" id="fnPickerModal" onclick="if(event.target===this)closeFnPickerModal()">
+  <div class="modal">
+    <div class="fn-modal-head">
+      <div class="fn-icon">ƒ</div>
+      <div class="fn-title">
+        <h3>Funções de Coluna</h3>
+        <div class="fn-sub">Selecione uma coluna para configurar</div>
+      </div>
+      <span class="modal-x" onclick="closeFnPickerModal()">×</span>
+    </div>
+    <div class="fn-col-list" id="fnColList">
+      <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:12px">
+        Importe um CSV primeiro.
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.5">
+      💡 Você também pode clicar no botão <span style="font-family:var(--mono);font-style:italic;font-weight:700;color:var(--purple);background:var(--purple-dim);padding:1px 6px;border-radius:3px">ƒ</span> ao lado de qualquer coluna no mapeamento.
+    </div>
+  </div>
+</div>
+
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // STATE
@@ -544,10 +734,166 @@ const S = {
   headers: [],
   rows: [],
   delimiter: ',',
-  colCfg: [],       // [{csvIndex,csvName,dbName,type,isKey,fixedValue}]
+  colCfg: [],       // [{csvIndex,csvName,dbName,type,isKey,fixedValue,fn:{type,params}}]
   op: 'INSERT',
-  sql: ''
+  sql: '',
+  fnEditingIdx: -1  // qual coluna está sendo editada no fnModal
 };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COLUMN FUNCTIONS — Definições e engine
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const FN_DEFS = {
+  none: {
+    label: '— Nenhuma (valor original) —',
+    params: [],
+    hint: ''
+  },
+  sequence: {
+    label: '🔢 Sequencial (chave manual)',
+    params: [
+      { name:'start', label:'Valor inicial', type:'number', default:1 },
+      { name:'step',  label:'Incremento por linha', type:'number', default:1 },
+      { name:'pad',   label:'Padding com zeros à esquerda (0 = sem)', type:'number', default:0 }
+    ],
+    hint: 'Gera valores sequenciais: linha 1 = start, linha 2 = start+step, etc. Ideal para IDs manuais quando a coluna não tem auto-increment.',
+    warn: 'Se a coluna for tipo VARCHAR e você quiser zero-padding (ex: "000001"), use padding > 0. Para INT puro, padding deve ser 0.'
+  },
+  digits: {
+    label: '🔣 Somente dígitos (CPF, CNPJ, telefone…)',
+    params: [],
+    hint: 'Remove tudo que não for 0-9. Ex: "777.777.777-77" → "77777777777".'
+  },
+  letters: {
+    label: '🔤 Somente letras',
+    params: [],
+    hint: 'Remove dígitos, pontuação e símbolos. Mantém letras (incl. acentuadas) e espaços.'
+  },
+  upper: {
+    label: '⬆ MAIÚSCULAS',
+    params: [],
+    hint: 'Converte tudo para maiúsculas.'
+  },
+  lower: {
+    label: '⬇ minúsculas',
+    params: [],
+    hint: 'Converte tudo para minúsculas.'
+  },
+  capitalize: {
+    label: 'Aa Capitalizar',
+    params: [],
+    hint: 'Primeira letra de cada palavra em maiúscula. Ex: "joão da silva" → "João Da Silva".'
+  },
+  trim: {
+    label: '✂ TRIM (remover espaços extremos)',
+    params: [],
+    hint: 'Remove espaços do início e do fim da string.'
+  },
+  noAccents: {
+    label: 'Á→A Remover acentos',
+    params: [],
+    hint: 'Ex: "São Paulo" → "Sao Paulo".'
+  },
+  padLeft: {
+    label: '0… Padding zeros à esquerda',
+    params: [
+      { name:'len', label:'Tamanho total', type:'number', default:6 }
+    ],
+    hint: 'Ex: "42" com tamanho 6 → "000042". Útil para códigos formatados.',
+    warn: 'Use apenas com tipo VARCHAR. Em colunas INT, os zeros à esquerda são descartados pelo SQL Server.'
+  },
+  substring: {
+    label: '✂ Substring (recorte)',
+    params: [
+      { name:'start', label:'Posição inicial (0 = primeira)', type:'number', default:0 },
+      { name:'len',   label:'Comprimento (caracteres)',       type:'number', default:10 }
+    ],
+    hint: 'Extrai um pedaço da string. Ex: "ABC123456" start=3 len=4 → "1234".'
+  },
+  replace: {
+    label: '↔ Substituir texto',
+    params: [
+      { name:'find',    label:'Buscar',     type:'text', default:'' },
+      { name:'replace', label:'Substituir por', type:'text', default:'' }
+    ],
+    hint: 'Substituição literal (todas as ocorrências). Não usa regex.'
+  },
+  affix: {
+    label: '+ Prefixo / Sufixo',
+    params: [
+      { name:'prefix', label:'Prefixo (texto antes)', type:'text', default:'' },
+      { name:'suffix', label:'Sufixo (texto depois)', type:'text', default:'' }
+    ],
+    hint: 'Ex: prefixo="USR_" + valor="42" → "USR_42".'
+  },
+  dateBrIso: {
+    label: '📅 Data BR → ISO (yyyy-mm-dd)',
+    params: [],
+    hint: 'Converte dd/mm/yyyy ou dd-mm-yyyy para yyyy-mm-dd. Anos com 2 dígitos: >50 → 19xx, ≤50 → 20xx.'
+  }
+};
+
+// Aplica uma função a um valor bruto, dado o índice da linha (necessário para 'sequence')
+function applyFn(raw, col, rowIndex) {
+  if (!col.fn || !col.fn.type || col.fn.type === 'none') return raw;
+  const v = raw == null ? '' : String(raw);
+  const p = col.fn.params || {};
+  try {
+    switch (col.fn.type) {
+      case 'sequence': {
+        const start = Number(p.start ?? 1);
+        const step  = Number(p.step  ?? 1);
+        const pad   = Number(p.pad   ?? 0);
+        if (!Number.isFinite(start) || !Number.isFinite(step)) return v;
+        const n = start + rowIndex * step;
+        return pad > 0 ? String(n).padStart(pad, '0') : String(n);
+      }
+      case 'digits':     return v.replace(/\D/g, '');
+      case 'letters':    return v.replace(/[^a-zA-ZÀ-ÿ\s]/g, '');
+      case 'upper':      return v.toUpperCase();
+      case 'lower':      return v.toLowerCase();
+      case 'capitalize': return v.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+      case 'trim':       return v.trim();
+      case 'noAccents':  return v.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      case 'padLeft': {
+        const len = Number(p.len ?? 0);
+        return len > 0 ? v.padStart(len, '0') : v;
+      }
+      case 'substring': {
+        const start = Math.max(0, Number(p.start ?? 0));
+        const len   = Math.max(0, Number(p.len ?? v.length));
+        return v.substr(start, len);
+      }
+      case 'replace': {
+        const find = p.find ?? '';
+        const rep  = p.replace ?? '';
+        if (!find) return v;
+        return v.split(find).join(rep);
+      }
+      case 'affix':
+        return (p.prefix || '') + v + (p.suffix || '');
+      case 'dateBrIso': {
+        const m = v.trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+        if (!m) return v;
+        let [, d, mo, y] = m;
+        if (y.length === 2) y = (parseInt(y, 10) > 50 ? '19' : '20') + y;
+        return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+      }
+      default: return v;
+    }
+  } catch (e) {
+    console.error('applyFn error', col.fn, e);
+    return v;
+  }
+}
+
+function fnLabel(fnType) {
+  return FN_DEFS[fnType]?.label?.replace(/^[^\s]+\s/, '') || fnType;
+}
+
+function countActiveFns() {
+  return S.colCfg.filter(c => c.fn && c.fn.type && c.fn.type !== 'none').length;
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CSV PARSING
@@ -604,10 +950,9 @@ function loadFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     let text = e.target.result;
-    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
     processCSV(text, file.name, file.size);
   };
-  // Try UTF-8 first, fallback handled by browser
   reader.readAsText(file, 'UTF-8');
 }
 
@@ -622,7 +967,6 @@ function processCSV(text, name, size) {
   S.headers = all[0];
   S.rows = all.slice(1);
 
-  // Show file info
   document.getElementById('dropZone').classList.add('hidden');
   document.getElementById('fileLoaded').classList.remove('hidden');
   document.getElementById('fName').textContent = name;
@@ -631,7 +975,7 @@ function processCSV(text, name, size) {
 
   buildColMap();
   renderPreview();
-  checkTableRestore(); // verifica se existe config salva para a tabela atual
+  checkTableRestore();
 }
 
 function onDelimChange() {
@@ -659,11 +1003,11 @@ function buildColMap(prevCfg) {
       dbName: prev ? prev.dbName : h,
       type: prev ? prev.type : autoType(S.rows.map(r => r[i] || '')),
       isKey: prev ? prev.isKey : false,
-      fixedValue: ''
+      fixedValue: '',
+      fn: prev && prev.fn ? prev.fn : { type:'none', params:{} }
     };
   });
 
-  // Preserve existing manual columns from previous configuration
   if (prevCfg) {
     prevCfg.forEach(c => {
       if (c.csvIndex === -1) S.colCfg.push(c);
@@ -671,6 +1015,7 @@ function buildColMap(prevCfg) {
   }
 
   renderColMap();
+  updateFnCountBadge();
 }
 
 function renderColMap() {
@@ -694,7 +1039,10 @@ function renderColMap() {
         <tbody>${S.colCfg.map((c,i) => colRow(c,i,showKey)).join('')}</tbody>
       </table>
     </div>
-    ${showKey ? '<div class="legend-row"><span class="badge badge-key">WHERE</span> = colunas usadas na condição WHERE / ON</div>' : ''}
+    <div class="legend-row">
+      ${showKey ? '<span><span class="badge badge-key">WHERE</span> = condição WHERE / ON</span>' : ''}
+      <span><span class="badge badge-fn">ƒ</span> = transformação aplicada</span>
+    </div>
   `;
   document.getElementById('prevBadge').textContent = S.rows.length.toLocaleString('pt-BR') + ' linhas';
 }
@@ -706,7 +1054,8 @@ function addManualCol() {
     dbName: 'Nova_Coluna',
     type: 'LITERAL',
     isKey: false,
-    fixedValue: ''
+    fixedValue: '',
+    fn: { type:'none', params:{} }
   });
   renderColMap();
 }
@@ -714,12 +1063,14 @@ function addManualCol() {
 function removeManualCol(i) {
   S.colCfg.splice(i, 1);
   renderColMap();
+  updateFnCountBadge();
 }
 
 function colRow(col, i, showKey) {
   const TYPES = ['VARCHAR','INT','DECIMAL','DATE','DATETIME','BIT','NULL','LITERAL (sem aspas)','— Ignorar'];
   const VALS  = ['VARCHAR','INT','DECIMAL','DATE','DATETIME','BIT','NULL','LITERAL','SKIP'];
   const skip = col.type === 'SKIP';
+  const hasFn = col.fn && col.fn.type && col.fn.type !== 'none';
 
   let csvColHTML = '';
   if (col.csvIndex === -1) {
@@ -731,9 +1082,16 @@ function colRow(col, i, showKey) {
     csvColHTML = `<span class="csv-badge" title="${esc(col.csvName)}">${esc(col.csvName)}</span>`;
   }
 
+  const fnTitle = hasFn ? `Função aplicada: ${fnLabel(col.fn.type)} — clique para editar` : 'Adicionar função de transformação';
+
   return `<tr id="cr${i}" class="${skip?'skipped':''}">
     <td>${csvColHTML}</td>
-    <td><input type="text" value="${esc(col.dbName)}" onchange="updCol(${i},'dbName',this.value)" ${skip?'disabled':''}></td>
+    <td>
+      <div class="db-col-cell">
+        <input type="text" value="${esc(col.dbName)}" onchange="updCol(${i},'dbName',this.value)" ${skip?'disabled':''}>
+        <button type="button" class="fn-btn ${hasFn?'active':''}" onclick="openFnModal(${i})" title="${fnTitle}" ${skip?'disabled':''}>ƒ</button>
+      </div>
+    </td>
     <td><select onchange="updCol(${i},'type',this.value)">
       ${TYPES.map((t,j)=>`<option value="${VALS[j]}" ${col.type===VALS[j]?'selected':''}>${t}</option>`).join('')}
     </select></td>
@@ -747,8 +1105,8 @@ function updCol(i, field, value) {
     const row = document.getElementById('cr'+i);
     const skip = value === 'SKIP';
     if (row) row.className = skip ? 'skipped' : '';
-    row?.querySelectorAll('input,select').forEach((el,j) => {
-      if (j > 0) el.disabled = skip; // keep type select enabled
+    row?.querySelectorAll('input,select,button').forEach((el,j) => {
+      if (j > 0) el.disabled = skip;
     });
   }
 }
@@ -774,6 +1132,189 @@ function clearKeys() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FUNCTION MODAL — Edição individual
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function openFnModal(colIdx) {
+  if (colIdx == null || colIdx < 0 || colIdx >= S.colCfg.length) return;
+  const col = S.colCfg[colIdx];
+  S.fnEditingIdx = colIdx;
+
+  document.getElementById('fnModalColName').textContent = col.dbName || col.csvName;
+
+  // Popular dropdown de funções
+  const sel = document.getElementById('fnTypeSel');
+  sel.innerHTML = Object.entries(FN_DEFS).map(
+    ([k,v]) => `<option value="${k}">${esc(v.label)}</option>`
+  ).join('');
+  sel.value = col.fn?.type || 'none';
+
+  // Renderizar params do tipo atual
+  renderFnParams(col.fn?.type || 'none', col.fn?.params || {});
+  updateFnPreview();
+
+  document.getElementById('fnModal').classList.add('open');
+}
+
+function closeFnModal() {
+  document.getElementById('fnModal').classList.remove('open');
+  S.fnEditingIdx = -1;
+}
+
+function onFnTypeChange() {
+  const type = document.getElementById('fnTypeSel').value;
+  const def = FN_DEFS[type];
+  if (!def) return;
+  // Resetar params para defaults ao trocar de função
+  const params = {};
+  def.params.forEach(p => { params[p.name] = p.default; });
+  renderFnParams(type, params);
+  updateFnPreview();
+}
+
+function renderFnParams(type, currentParams) {
+  const def = FN_DEFS[type];
+  const box = document.getElementById('fnParamsBox');
+  const section = document.getElementById('fnParamsSection');
+  const hintBox = document.getElementById('fnHintBox');
+
+  if (!def || !def.params.length) {
+    section.style.display = 'none';
+  } else {
+    section.style.display = '';
+    box.innerHTML = def.params.map(p => {
+      const val = currentParams[p.name] !== undefined ? currentParams[p.name] : p.default;
+      return `<div class="fn-param-row">
+        <div class="fn-param-label">${esc(p.label)}</div>
+        <input type="${p.type}" data-param="${p.name}" value="${esc(val)}" oninput="updateFnPreview()" ${p.type==='number'?'step="1"':''}>
+      </div>`;
+    }).join('');
+  }
+
+  // Hint e warn boxes
+  let hintHTML = '';
+  if (def.hint) hintHTML += `<div class="fn-hint"><span>💡</span><span>${esc(def.hint)}</span></div>`;
+  if (def.warn) hintHTML += `<div class="fn-warn"><span>⚠</span><span>${esc(def.warn)}</span></div>`;
+  hintBox.innerHTML = hintHTML;
+}
+
+function readFnParamsFromUI() {
+  const params = {};
+  document.querySelectorAll('#fnParamsBox [data-param]').forEach(el => {
+    const name = el.dataset.param;
+    const v = el.value;
+    params[name] = el.type === 'number' ? (v === '' ? 0 : Number(v)) : v;
+  });
+  return params;
+}
+
+function updateFnPreview() {
+  if (S.fnEditingIdx < 0) return;
+  const col = S.colCfg[S.fnEditingIdx];
+  const type = document.getElementById('fnTypeSel').value;
+  const params = readFnParamsFromUI();
+  const tempCol = { ...col, fn: { type, params } };
+
+  const body = document.getElementById('fnPreviewBody');
+  const rowsToShow = Math.min(3, Math.max(1, S.rows.length));
+  if (!S.rows.length) {
+    body.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-dim);font-size:11px;font-style:italic">Sem dados para preview</div>`;
+    return;
+  }
+
+  const lines = [];
+  for (let i = 0; i < rowsToShow; i++) {
+    const raw = col.csvIndex === -1 ? col.fixedValue : (S.rows[i][col.csvIndex] || '');
+    const out = applyFn(raw, tempCol, i);
+    const rawDisp = raw === '' ? '∅' : raw;
+    const outDisp = out === '' ? '∅' : out;
+    const isEmpty = out === '';
+    lines.push(`<div class="fn-preview-row">
+      <span class="fn-prev-in" title="${esc(rawDisp)}">${esc(rawDisp)}</span>
+      <span class="fn-prev-arrow">→</span>
+      <span class="fn-prev-out ${isEmpty?'empty-out':''}" title="${esc(outDisp)}">${esc(outDisp)}</span>
+    </div>`);
+  }
+  body.innerHTML = lines.join('');
+}
+
+function applyFnAndClose() {
+  if (S.fnEditingIdx < 0) return;
+  const type = document.getElementById('fnTypeSel').value;
+  const params = readFnParamsFromUI();
+  S.colCfg[S.fnEditingIdx].fn = { type, params };
+  const colName = S.colCfg[S.fnEditingIdx].dbName;
+  closeFnModal();
+  renderColMap();
+  updateFnCountBadge();
+  if (type === 'none') {
+    toast(`Função removida de "${colName}"`, 'info');
+  } else {
+    toast(`Função "${fnLabel(type)}" aplicada a "${colName}"`, 'success');
+  }
+}
+
+function clearFnAndClose() {
+  if (S.fnEditingIdx < 0) return;
+  const colName = S.colCfg[S.fnEditingIdx].dbName;
+  S.colCfg[S.fnEditingIdx].fn = { type:'none', params:{} };
+  closeFnModal();
+  renderColMap();
+  updateFnCountBadge();
+  toast(`Função removida de "${colName}"`, 'info');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FUNCTION PICKER MODAL — Lista de colunas
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function openFnPickerModal() {
+  if (!S.colCfg.length) {
+    toast('Importe um CSV ou adicione colunas manuais primeiro', 'error');
+    return;
+  }
+  renderFnColList();
+  document.getElementById('fnPickerModal').classList.add('open');
+}
+
+function closeFnPickerModal() {
+  document.getElementById('fnPickerModal').classList.remove('open');
+}
+
+function renderFnColList() {
+  const list = document.getElementById('fnColList');
+  if (!S.colCfg.length) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:12px">Sem colunas disponíveis.</div>`;
+    return;
+  }
+  list.innerHTML = S.colCfg.map((c,i) => {
+    const hasFn = c.fn && c.fn.type && c.fn.type !== 'none';
+    const fnTag = hasFn
+      ? `<span class="fn-col-list-fn">ƒ ${esc(fnLabel(c.fn.type))}</span>`
+      : `<span class="fn-col-list-empty">— sem função —</span>`;
+    const skipped = c.type === 'SKIP' ? ' (ignorada)' : '';
+    return `<div class="fn-col-list-item" onclick="pickerSelectCol(${i})">
+      <div class="fn-col-list-name">${esc(c.dbName)}${skipped}</div>
+      ${fnTag}
+    </div>`;
+  }).join('');
+}
+
+function pickerSelectCol(idx) {
+  closeFnPickerModal();
+  openFnModal(idx);
+}
+
+function updateFnCountBadge() {
+  const n = countActiveFns();
+  const badge = document.getElementById('fnCountBadge');
+  if (n > 0) {
+    badge.textContent = n;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // OPERATION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function setOp(op) {
@@ -795,7 +1336,6 @@ function setOp(op) {
     h.className = 'hidden';
   }
 
-  // Multi-values only for INSERT
   const mv = document.getElementById('optMV');
   if (op !== 'INSERT') { mv.checked = false; mv.disabled = true; document.getElementById('mvRow').style.display='none'; }
   else mv.disabled = false;
@@ -829,7 +1369,6 @@ function fmtVal(raw, type) {
     case 'INT':       return v.replace(/[^\d-]/g,'') || 'NULL';
     case 'DECIMAL': {
       let n = v.trim();
-      // Brazilian: 1.234,56 → 1234.56
       if (n.includes(',') && n.includes('.')) n = n.replace(/\./g,'').replace(',','.');
       else if (n.includes(',')) n = n.replace(',','.');
       return n.replace(/[^\d.-]/g,'') || 'NULL';
@@ -884,15 +1423,18 @@ function generateSQL() {
   const colList = active.map(c => c.dbName).join(', ');
   let cmdCt = 0;
 
-  // Helper function to extract value from CSV row or fixed input
-  const getVal = (r, c) => c.csvIndex === -1 ? c.fixedValue : r[c.csvIndex];
+  // ── HELPER: extrai valor bruto e aplica função (se houver) ──
+  const getVal = (r, c, rowIdx) => {
+    const raw = c.csvIndex === -1 ? c.fixedValue : r[c.csvIndex];
+    return applyFn(raw, c, rowIdx);
+  };
 
   // ── INSERT multi-values
   if (mv) {
     let batch = [];
     for (let i = 0; i < S.rows.length; i++) {
       const r = S.rows[i];
-      batch.push('  (' + active.map(c => fmtVal(getVal(r,c), c.type)).join(', ') + ')');
+      batch.push('  (' + active.map(c => fmtVal(getVal(r,c,i), c.type)).join(', ') + ')');
       if (batch.length >= bs || i === S.rows.length - 1) {
         L.push(`INSERT INTO ${table} (${colList}) VALUES`);
         L.push(batch.join(',\n') + ';');
@@ -902,25 +1444,25 @@ function generateSQL() {
       }
     }
 
-  // ── SELECT without WHERE — single statement
+  // ── SELECT sem WHERE
   } else if (S.op === 'SELECT' && !keys.length) {
     L.push(`SELECT ${colList} FROM ${table};`);
     cmdCt = 1;
 
-  // ── Per-row generation
+  // ── Por linha
   } else {
     for (let i = 0; i < S.rows.length; i++) {
       const r = S.rows[i];
-      const kWhere = keys.map(c => `${c.dbName} = ${fmtVal(getVal(r,c), c.type)}`).join(' AND ');
+      const kWhere = keys.map(c => `${c.dbName} = ${fmtVal(getVal(r,c,i), c.type)}`).join(' AND ');
 
       if (S.op === 'INSERT') {
-        L.push(`INSERT INTO ${table} (${colList}) VALUES (${active.map(c => fmtVal(getVal(r,c), c.type)).join(', ')});`);
+        L.push(`INSERT INTO ${table} (${colList}) VALUES (${active.map(c => fmtVal(getVal(r,c,i), c.type)).join(', ')});`);
 
       } else if (S.op === 'UPDATE') {
         if (!vals.length) {
           L.push(`-- linha ${i+1}: ignorada (todas as colunas são chave, nada para SET)`);
         } else {
-          L.push(`UPDATE ${table} SET ${vals.map(c => `${c.dbName} = ${fmtVal(getVal(r,c), c.type)}`).join(', ')} WHERE ${kWhere};`);
+          L.push(`UPDATE ${table} SET ${vals.map(c => `${c.dbName} = ${fmtVal(getVal(r,c,i), c.type)}`).join(', ')} WHERE ${kWhere};`);
         }
 
       } else if (S.op === 'DELETE') {
@@ -930,7 +1472,7 @@ function generateSQL() {
         L.push(`SELECT ${colList} FROM ${table} WHERE ${kWhere};`);
 
       } else if (S.op === 'MERGE') {
-        const srcCols = active.map(c => `${fmtVal(getVal(r,c), c.type)} AS ${c.dbName}`).join(', ');
+        const srcCols = active.map(c => `${fmtVal(getVal(r,c,i), c.type)} AS ${c.dbName}`).join(', ');
         const onClause   = keys.map(c => `target.${c.dbName} = source.${c.dbName}`).join(' AND ');
         const updSet     = vals.length ? `WHEN MATCHED THEN\n    UPDATE SET ${vals.map(c=>`target.${c.dbName} = source.${c.dbName}`).join(', ')}` : '';
         const insCols    = colList;
@@ -949,7 +1491,6 @@ function generateSQL() {
 
   S.sql = L.join('\n');
 
-  // Show output
   const ta = document.getElementById('sqlOutput');
   ta.value = S.sql;
   ta.classList.remove('hidden');
@@ -957,15 +1498,17 @@ function generateSQL() {
   document.getElementById('btnCopy').classList.remove('hidden');
   document.getElementById('btnExport').classList.remove('hidden');
 
+  const fnCount = countActiveFns();
+  const fnSuffix = fnCount > 0 ? ` · ${fnCount} função(ões) aplicada(s)` : '';
   const stat = mv
-    ? `${cmdCt} INSERT(s) multi-values · ${S.rows.length.toLocaleString('pt-BR')} registros`
-    : `${cmdCt.toLocaleString('pt-BR')} comando(s)`;
+    ? `${cmdCt} INSERT(s) multi-values · ${S.rows.length.toLocaleString('pt-BR')} registros${fnSuffix}`
+    : `${cmdCt.toLocaleString('pt-BR')} comando(s)${fnSuffix}`;
   document.getElementById('outStat').textContent = stat;
   document.getElementById('outBadge').textContent = cmdCt.toLocaleString('pt-BR') + ' cmds';
 
   switchTab('output');
   toast(`${cmdCt.toLocaleString('pt-BR')} comando(s) gerado(s) com sucesso`, 'success');
-  saveTableSchema(); // auto-save col config por tabela
+  saveTableSchema();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1037,7 +1580,8 @@ function saveTableSchema() {
     colCfg: S.colCfg.map(c => ({
       csvIndex: c.csvIndex, csvName: c.csvName,
       dbName: c.dbName, type: c.type,
-      isKey: c.isKey, fixedValue: c.fixedValue || ''
+      isKey: c.isKey, fixedValue: c.fixedValue || '',
+      fn: c.fn || { type:'none', params:{} }
     })),
     nc: document.getElementById('optNC').checked,
     tr: document.getElementById('optTR').checked,
@@ -1075,7 +1619,6 @@ function tblNames() {
   return n.sort();
 }
 
-// Called on tableIn input/blur and after file load
 function checkTableRestore() {
   const tbl = document.getElementById('tableIn').value.trim();
   updateTblIndicator(tbl);
@@ -1088,7 +1631,6 @@ function checkTableRestore() {
 function onTableInput() {
   const tbl = document.getElementById('tableIn').value.trim();
   updateTblIndicator(tbl);
-  // Don't show banner while typing — wait for blur
   if (!tbl) hideRestoreBanner();
 }
 
@@ -1096,9 +1638,11 @@ function showRestoreBanner(tbl, data) {
   const d = new Date(data.savedAt);
   const fmt = d.toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const colCount = data.colCfg.filter(c => c.type !== 'SKIP').length;
+  const fnCount = data.colCfg.filter(c => c.fn && c.fn.type && c.fn.type !== 'none').length;
+  const fnInfo = fnCount > 0 ? ` · ${fnCount} função(ões)` : '';
   document.getElementById('rbTblName').textContent = tbl;
   document.getElementById('rbMeta').textContent =
-    `${colCount} coluna(s) · op: ${data.op} · salvo em ${fmt}`;
+    `${colCount} coluna(s) · op: ${data.op}${fnInfo} · salvo em ${fmt}`;
   document.getElementById('restoreBanner').classList.remove('hidden');
 }
 
@@ -1111,7 +1655,6 @@ function restoreTableSchema() {
   const data = loadTableSchemaData(tbl);
   if (!data) { toast('Nenhuma config encontrada para essa tabela', 'error'); return; }
 
-  // Settings
   if (data.schema !== undefined) document.getElementById('schemaIn').value = data.schema;
   if (data.op) setOp(data.op);
   if (data.nc !== undefined) document.getElementById('optNC').checked = data.nc;
@@ -1124,9 +1667,7 @@ function restoreTableSchema() {
   if (data.dv !== undefined) document.getElementById('optDV').value = data.dv;
   toggleMVRow(); toggleGORow(); toggleDefaultRow();
 
-  // Column mapping: match saved cols by csvName to current CSV headers
   if (S.headers.length) {
-    // Apply saved settings to columns that exist in current CSV
     S.colCfg.forEach(col => {
       if (col.csvIndex === -1) return;
       const saved = data.colCfg.find(s => s.csvIndex !== -1 && s.csvName === col.csvName);
@@ -1134,20 +1675,22 @@ function restoreTableSchema() {
         col.dbName  = saved.dbName;
         col.type    = saved.type;
         col.isKey   = saved.isKey;
+        col.fn      = saved.fn || { type:'none', params:{} };
       }
     });
-    // Re-add saved manual columns (csvIndex === -1)
     const manuals = data.colCfg.filter(s => s.csvIndex === -1);
-    // Remove any existing manual cols first, then re-add from saved
     const withoutManuals = S.colCfg.filter(c => c.csvIndex !== -1);
     S.colCfg.length = 0;
     withoutManuals.forEach(c => S.colCfg.push(c));
-    manuals.forEach(m => S.colCfg.push({...m}));
+    manuals.forEach(m => S.colCfg.push({
+      ...m,
+      fn: m.fn || { type:'none', params:{} }
+    }));
     renderColMap();
+    updateFnCountBadge();
   }
 
   hideRestoreBanner();
-  // Count matched vs unmatched columns for feedback
   const savedCsvCols = data.colCfg.filter(s => s.csvIndex !== -1).map(s => s.csvName);
   const matched = S.headers.filter(h => savedCsvCols.includes(h)).length;
   const total = S.headers.length;
@@ -1164,7 +1707,6 @@ function updateTblIndicator(tbl) {
   ind.classList.remove('hidden');
 }
 
-// ── Render table history list in modal
 function renderTblHistList() {
   const names = tblNames();
   const list  = document.getElementById('tblHistList');
@@ -1179,10 +1721,12 @@ function renderTblHistList() {
     const d   = new Date(data.savedAt);
     const fmt = d.toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     const colCount = data.colCfg.filter(c => c.type !== 'SKIP').length;
+    const fnCount = data.colCfg.filter(c => c.fn && c.fn.type && c.fn.type !== 'none').length;
+    const fnInfo = fnCount > 0 ? ` · ƒ×${fnCount}` : '';
     return `<div class="tbl-item">
       <div class="tbl-item-info">
         <div class="tbl-item-name">📋 ${esc(data.schema||'dbo')}.${esc(n)}</div>
-        <div class="tbl-item-meta">${colCount} col(s) · ${data.op} · ${fmt}</div>
+        <div class="tbl-item-meta">${colCount} col(s) · ${data.op}${fnInfo} · ${fmt}</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="loadTblFromModal('${esc(n)}')">Carregar</button>
       <button class="btn btn-danger btn-sm" onclick="deleteTableSchema('${esc(n)}')">✕</button>
@@ -1191,20 +1735,17 @@ function renderTblHistList() {
 }
 
 function loadTblFromModal(name) {
-  // Set table name and trigger restore
   document.getElementById('tableIn').value = name;
   document.getElementById('schemaIn').value = loadTableSchemaData(name)?.schema || 'dbo';
   if (S.headers.length) {
     restoreTableSchema();
   } else {
-    // No CSV loaded yet — just set table name and show indicator
     updateTblIndicator(name);
     toast(`Tabela "${name}" selecionada — importe um CSV para mapear as colunas`, 'info');
   }
   closeProfileModal();
 }
 
-// Modal tab switcher
 function switchModalTab(tab) {
   document.getElementById('mtabPerfis').classList.toggle('active', tab === 'perfis');
   document.getElementById('mtabTabelas').classList.toggle('active', tab === 'tabelas');
@@ -1239,7 +1780,8 @@ function getCfg() {
       dbName: c.dbName,
       type: c.type,
       isKey: c.isKey,
-      fixedValue: c.fixedValue
+      fixedValue: c.fixedValue,
+      fn: c.fn || { type:'none', params:{} }
     })),
     nc: document.getElementById('optNC').checked,
     tr: document.getElementById('optTR').checked,
@@ -1267,20 +1809,24 @@ function applyCfg(c) {
   if (c.dv        !== undefined) document.getElementById('optDV').value = c.dv;
   if (c.op) setOp(c.op);
   toggleMVRow(); toggleGORow(); toggleDefaultRow();
-  
-  // Apply column mapping if headers present
+
   if (c.colCfg && S.headers.length) {
-    S.colCfg = S.colCfg.filter(x => x.csvIndex !== -1); // Limpa as manuais existentes primeiro
-    
+    S.colCfg = S.colCfg.filter(x => x.csvIndex !== -1);
     c.colCfg.forEach(saved => {
       if (saved.csvIndex === -1) {
-        S.colCfg.push(saved); // Reinsere as manuais salvas no perfil
+        S.colCfg.push({ ...saved, fn: saved.fn || { type:'none', params:{} } });
       } else {
         const f = S.colCfg.find(x => x.csvName === saved.csvName && x.csvIndex !== -1);
-        if (f) { f.dbName = saved.dbName; f.type = saved.type; f.isKey = saved.isKey; }
+        if (f) {
+          f.dbName = saved.dbName;
+          f.type   = saved.type;
+          f.isKey  = saved.isKey;
+          f.fn     = saved.fn || { type:'none', params:{} };
+        }
       }
     });
     renderColMap();
+    updateFnCountBadge();
   }
 }
 
@@ -1375,6 +1921,7 @@ function resetFile() {
   document.getElementById('prevBadge').textContent = '0 linhas';
   document.getElementById('outBadge').textContent = '0 cmds';
   hideRestoreBanner();
+  updateFnCountBadge();
   switchTab('preview');
 }
 
@@ -1429,9 +1976,11 @@ function esc(s) {
 // INIT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 updateProfSel();
-// Keyboard shortcut: Ctrl+Enter → Generate
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generateSQL();
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-ov.open').forEach(m => m.classList.remove('open'));
+  }
 });
 </script>
 </body>

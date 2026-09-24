@@ -541,6 +541,14 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
               <input type="number" id="optBS" value="500" min="1" max="9999">
             </div>
             <div class="opt-row">
+              <input type="checkbox" id="optSelIn" onchange="updateSelInOptions()">
+              <label class="opt-label" for="optSelIn">SELECT com IN <span style="color:var(--text-dim);font-weight:400">(apenas SELECT — gera 1 único SELECT em vez de um por linha)</span></label>
+            </div>
+            <div class="opt-sub" id="selInRow" style="display:none">
+              Coluna WHERE para o IN:
+              <select id="selInColSel"></select>
+            </div>
+            <div class="opt-row">
               <input type="checkbox" id="optGO" onchange="toggleGORow()">
               <label class="opt-label" for="optGO">Inserir GO a cada N comandos</label>
             </div>
@@ -1045,6 +1053,22 @@ function renderColMap() {
     </div>
   `;
   document.getElementById('prevBadge').textContent = S.rows.length.toLocaleString('pt-BR') + ' linhas';
+  updateSelInOptions();
+}
+
+function updateSelInOptions() {
+  const box = document.getElementById('optSelIn');
+  const row = document.getElementById('selInRow');
+  const sel = document.getElementById('selInColSel');
+  if (!box || !box.checked || S.op !== 'SELECT') { if (row) row.style.display = 'none'; return; }
+  const keyEntries = S.colCfg
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.type !== 'SKIP' && c.isKey);
+  if (!keyEntries.length) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  const prevVal = sel.value;
+  sel.innerHTML = keyEntries.map(({ c, i }) => `<option value="${i}">${esc(c.dbName)}</option>`).join('');
+  if (keyEntries.some(({ i }) => String(i) === prevVal)) sel.value = prevVal;
 }
 
 function addManualCol() {
@@ -1109,6 +1133,7 @@ function updCol(i, field, value) {
       if (j > 0) el.disabled = skip;
     });
   }
+  if (field === 'isKey' || field === 'type' || field === 'dbName') updateSelInOptions();
 }
 
 function setAllTypes(t) {
@@ -1129,6 +1154,7 @@ function autoDetectAll() {
 function clearKeys() {
   S.colCfg.forEach(c => c.isKey = false);
   renderColMap();
+  updateSelInOptions();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1325,7 +1351,7 @@ function setOp(op) {
     UPDATE: ['warn','⚠ Marque pelo menos uma coluna como WHERE para identificar os registros a atualizar.'],
     DELETE: ['warn','⚠ Marque pelo menos uma coluna como WHERE para identificar os registros a excluir.'],
     MERGE:  ['info','ℹ Colunas WHERE = chave de correspondência (ON clause). Demais colunas atualizam e/ou inserem.'],
-    SELECT: ['info','ℹ Sem colunas WHERE: gera um único SELECT. Com colunas WHERE: gera um SELECT por linha.'],
+    SELECT: ['info','ℹ Sem colunas WHERE: gera um único SELECT. Com colunas WHERE: gera um SELECT por linha (ou marque "SELECT com IN" e escolha qual coluna WHERE vira IN).'],
   };
   const h = document.getElementById('opHint');
   if (hints[op]) {
@@ -1339,6 +1365,11 @@ function setOp(op) {
   const mv = document.getElementById('optMV');
   if (op !== 'INSERT') { mv.checked = false; mv.disabled = true; document.getElementById('mvRow').style.display='none'; }
   else mv.disabled = false;
+
+  const selIn = document.getElementById('optSelIn');
+  if (op !== 'SELECT') { selIn.checked = false; selIn.disabled = true; }
+  else selIn.disabled = false;
+  updateSelInOptions();
 
   if (S.headers.length) renderColMap();
 }
@@ -1407,6 +1438,16 @@ function generateSQL() {
   if (S.op === 'MERGE' && !keys.length) {
     toast('MERGE exige ao menos uma coluna WHERE para a cláusula ON', 'error'); return;
   }
+  const selIn = document.getElementById('optSelIn').checked && S.op === 'SELECT';
+  let selInCol = null;
+  if (selIn) {
+    const selInSel = document.getElementById('selInColSel');
+    const idx = parseInt(selInSel.value);
+    selInCol = Number.isInteger(idx) ? S.colCfg[idx] : null;
+    if (!selInCol || !selInCol.isKey || selInCol.type === 'SKIP') {
+      toast('Marque ao menos uma coluna WHERE e escolha qual usar no IN', 'error'); return;
+    }
+  }
 
   const nc = document.getElementById('optNC').checked;
   const tr = document.getElementById('optTR').checked;
@@ -1448,6 +1489,39 @@ function generateSQL() {
   } else if (S.op === 'SELECT' && !keys.length) {
     L.push(`SELECT ${colList} FROM ${table};`);
     cmdCt = 1;
+
+  // ── SELECT com IN (1 coluna WHERE escolhida vira IN; demais colunas WHERE
+  //    marcadas viram AND com valor fixo, desde que sejam iguais em todas as linhas)
+  } else if (S.op === 'SELECT' && selIn) {
+    const otherKeys = keys.filter(c => c !== selInCol);
+    let badCol = null;
+    for (const ok of otherKeys) {
+      let base = null;
+      for (let i = 0; i < S.rows.length; i++) {
+        const v = fmtVal(getVal(S.rows[i], ok, i), ok.type);
+        if (base === null) base = v;
+        else if (v !== base) { badCol = ok.dbName; break; }
+      }
+      if (badCol) break;
+    }
+    if (badCol) {
+      toast(`A coluna WHERE "${badCol}" varia entre as linhas — só a coluna escolhida para o IN pode variar. Desmarque-a do WHERE ou escolha-a para o IN.`, 'error');
+      return;
+    }
+    const seen = new Set();
+    const inVals = [];
+    for (let i = 0; i < S.rows.length; i++) {
+      const fv = fmtVal(getVal(S.rows[i], selInCol, i), selInCol.type);
+      if (!seen.has(fv)) { seen.add(fv); inVals.push(fv); }
+    }
+    if (inVals.length) {
+      const whereParts = [`${selInCol.dbName} IN (${inVals.join(', ')})`];
+      otherKeys.forEach(ok => whereParts.push(`${ok.dbName} = ${fmtVal(getVal(S.rows[0], ok, 0), ok.type)}`));
+      L.push(`SELECT ${colList} FROM ${table} WHERE ${whereParts.join(' AND ')};`);
+      cmdCt = 1;
+    } else {
+      L.push('-- Nenhum valor encontrado para a coluna WHERE');
+    }
 
   // ── Por linha
   } else {

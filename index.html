@@ -30,7 +30,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 
 /* ── LAYOUT ── */
 .app{display:grid;grid-template-rows:48px 1fr;height:100vh}
-.main{display:grid;grid-template-columns:370px 1fr;overflow:hidden}
+.main{display:grid;grid-template-columns:var(--left-w,370px) 1fr;overflow:hidden}
 
 /* ── HEADER ── */
 .header{
@@ -80,8 +80,12 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 .btn-xs{padding:2px 7px;font-size:10px}
 
 /* ── LEFT PANEL ── */
-.left-panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.left-panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative}
+.panel-resizer{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;z-index:5;transition:background var(--t)}
+.panel-resizer:hover,.panel-resizer.dragging{background:var(--cyan-glow)}
+body.resizing{cursor:col-resize;user-select:none}
 .left-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:13px}
+.left-scroll > .section{flex-shrink:0}
 
 /* ── SECTIONS ── */
 .section{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);display:flex;flex-direction:column;overflow:hidden}
@@ -115,6 +119,21 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
 .fl-info{flex:1;min-width:0}
 .fl-name{font-size:11px;font-weight:600;color:var(--green);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fl-meta{font-size:10px;color:var(--text-dim)}
+
+/* ── SHEETS (XLSX) ── */
+.sheet-list{max-height:210px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)}
+.sheet-item{display:flex;align-items:center;gap:7px;padding:5px 7px;border-bottom:1px solid var(--border);border-left:2px solid transparent}
+.sheet-item:last-child{border-bottom:none}
+.sheet-item.active{background:var(--cyan-dim);border-left-color:var(--cyan)}
+.sheet-item.empty{opacity:.45}
+.sheet-info{flex:1;min-width:0;cursor:pointer}
+.sheet-item.empty .sheet-info{cursor:default}
+.sheet-name{font-size:11px;font-weight:600;color:var(--text-hi);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sheet-item.active .sheet-name{color:var(--cyan)}
+.sheet-meta{font-size:10px;color:var(--text-dim)}
+.sheet-tag{font-size:9px;font-weight:700;color:var(--yellow);font-family:var(--font);text-transform:uppercase;margin-left:4px}
+.frow .sheet-item input.sheet-tbl{width:118px;flex-shrink:0;padding:3px 6px;font-size:11px;font-family:var(--mono)}
+.sheet-hint{font-size:10px;color:var(--text-dim);line-height:1.4}
 
 /* ── FORM ── */
 .frow{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
@@ -439,13 +458,13 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
       <div class="left-scroll">
 
         <div class="section">
-          <div class="sec-head"><div class="sec-num">1</div><span class="sec-title">Importar CSV</span></div>
+          <div class="sec-head"><div class="sec-num">1</div><span class="sec-title">Importar Arquivo</span></div>
           <div class="sec-body">
             <div id="dropZone" class="drop-zone">
-              <input type="file" id="fileInput" accept=".csv,.txt,.tsv">
+              <input type="file" id="fileInput" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,.ods">
               <div class="dz-icon">📂</div>
               <div class="dz-text"><strong>Clique ou arraste</strong> o arquivo aqui</div>
-              <div class="dz-sub">.csv · .txt · .tsv — UTF-8 ou Latin-1</div>
+              <div class="dz-sub">.csv · .txt · .tsv — UTF-8 ou Latin-1 · .xlsx · .xls (várias abas)</div>
             </div>
             <div id="fileLoaded" class="file-loaded hidden">
               <span style="font-size:18px">✅</span>
@@ -455,7 +474,28 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
               </div>
               <button class="btn btn-ghost btn-xs" onclick="resetFile()">✕</button>
             </div>
-            <div class="frow" style="margin-top:10px">
+            <div id="sheetBox" class="hidden" style="margin-top:10px">
+              <div class="frow">
+                <label class="flabel" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>Abas da planilha</span>
+                  <span style="display:flex;gap:4px;text-transform:none;letter-spacing:0">
+                    <button class="btn btn-ghost btn-xs" onclick="setAllSheetsInclude(true)">Todas</button>
+                    <button class="btn btn-ghost btn-xs" onclick="setAllSheetsInclude(false)">Nenhuma</button>
+                  </span>
+                </label>
+                <div class="sheet-list" id="sheetList"></div>
+                <div class="sheet-hint">☑ = incluir na geração · clique no nome para configurar a aba · campo à direita = tabela de destino</div>
+              </div>
+              <div class="frow">
+                <label class="flabel" for="hdrRowIn">Linha do cabeçalho (aba ativa)</label>
+                <input type="number" id="hdrRowIn" min="1" value="1" onchange="onHdrRowChange()">
+              </div>
+              <div class="opt-row">
+                <input type="checkbox" id="optAllSheets" checked>
+                <label class="opt-label" for="optAllSheets">Gerar SQL de todas as abas marcadas <span style="color:var(--text-dim);font-weight:400">(um script, uma tabela por aba)</span></label>
+              </div>
+            </div>
+            <div class="frow" id="delimRow" style="margin-top:10px">
               <label class="flabel">Delimitador</label>
               <select id="delimSel" onchange="onDelimChange()">
                 <option value="auto">🔍 Auto-detectar</option>
@@ -513,7 +553,7 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
             </div>
           </div>
           <div class="sec-body" id="colMapBody">
-            <div class="empty-panel">📥 Importe um CSV para mapear as colunas</div>
+            <div class="empty-panel">📥 Importe um arquivo para mapear as colunas</div>
           </div>
         </div>
 
@@ -586,12 +626,13 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
       </div><div class="left-footer">
         <button class="btn btn-primary btn-gen" onclick="generateSQL()">⚡ Gerar SQL</button>
       </div>
+      <div class="panel-resizer" id="panelResizer" title="Arraste para redimensionar · duplo clique para voltar ao tamanho padrão"></div>
     </aside>
 
     <section class="right-panel">
       <div class="tabs">
         <div class="tab active" data-tab="preview" onclick="switchTab('preview')">
-          📋 Preview CSV <span class="tab-badge" id="prevBadge">0 linhas</span>
+          📋 Preview <span class="tab-badge" id="prevBadge">0 linhas</span>
         </div>
         <div class="tab" data-tab="output" onclick="switchTab('output')">
           🗄️ SQL Output <span class="tab-badge" id="outBadge">0 cmds</span>
@@ -609,7 +650,7 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
           <div class="empty-state" id="prevEmpty">
             <div class="es-icon">📂</div>
             <div class="es-title">Nenhum arquivo importado</div>
-            <div class="es-sub">Importe um CSV para visualizar os dados</div>
+            <div class="es-sub">Importe um arquivo para visualizar os dados</div>
           </div>
           <div id="prevTable" class="hidden"></div>
         </div>
@@ -724,7 +765,7 @@ input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:po
     </div>
     <div class="fn-col-list" id="fnColList">
       <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:12px">
-        Importe um CSV primeiro.
+        Importe um arquivo primeiro.
       </div>
     </div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.5">
@@ -745,7 +786,12 @@ const S = {
   colCfg: [],       // [{csvIndex,csvName,dbName,type,isKey,fixedValue,fn:{type,params}}]
   op: 'INSERT',
   sql: '',
-  fnEditingIdx: -1  // qual coluna está sendo editada no fnModal
+  sqlName: '',      // base do nome do arquivo .sql exportado
+  fnEditingIdx: -1, // qual coluna está sendo editada no fnModal
+  source: 'csv',    // 'csv' | 'xlsx'
+  fileName: '', fileSize: 0,
+  sheets: [],       // XLSX: [{name,hidden,grid,hdrRow,headers,rows,colCfg,table,include,selIn}]
+  sheetIdx: -1      // aba ativa (espelhada em headers/rows/colCfg)
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -899,8 +945,8 @@ function fnLabel(fnType) {
   return FN_DEFS[fnType]?.label?.replace(/^[^\s]+\s/, '') || fnType;
 }
 
-function countActiveFns() {
-  return S.colCfg.filter(c => c.fn && c.fn.type && c.fn.type !== 'none').length;
+function countActiveFns(colCfg = S.colCfg) {
+  return colCfg.filter(c => c.fn && c.fn.type && c.fn.type !== 'none').length;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -945,7 +991,7 @@ function autoType(vals) {
   if (!s.length) return 'VARCHAR';
   if (s.every(v => /^(0|1|true|false|sim|não|nao|s|n|yes|no)$/i.test(v))) return 'BIT';
   if (s.every(v => /^-?\d+$/.test(v))) return 'INT';
-  if (s.every(v => /^-?\d*[.,]\d+$/.test(v))) return 'DECIMAL';
+  if (s.every(v => /^-?\d*[.,]?\d+$/.test(v))) return 'DECIMAL';  // inteiros misturados com decimais
   if (s.every(v => /^\d{2,4}[-/]\d{1,2}[-/]\d{2,4}$/.test(v))) return 'DATE';
   if (s.every(v => /^\d{2,4}[-/]\d{1,2}[-/]\d{2,4}[\sT]\d{2}:\d{2}/.test(v))) return 'DATETIME';
   return 'VARCHAR';
@@ -954,7 +1000,10 @@ function autoType(vals) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FILE LOAD
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const XLSX_EXT = /\.(xlsx|xlsm|xls|ods)$/i;
+
 function loadFile(file) {
+  if (XLSX_EXT.test(file.name)) { loadWorkbook(file); return; }
   const reader = new FileReader();
   reader.onload = e => {
     let text = e.target.result;
@@ -974,6 +1023,9 @@ function processCSV(text, name, size) {
 
   S.headers = all[0];
   S.rows = all.slice(1);
+  S.source = 'csv'; S.sheets = []; S.sheetIdx = -1;
+  S.fileName = name; S.fileSize = size;
+  showSheetUI(false);
 
   document.getElementById('dropZone').classList.add('hidden');
   document.getElementById('fileLoaded').classList.remove('hidden');
@@ -1001,15 +1053,257 @@ function onDelimChange() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// XLSX — leitura de pastas de trabalho com várias abas (SheetJS)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const XLSX_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+let xlsxLoading = null;
+
+// Carrega o SheetJS sob demanda (só quando um arquivo Excel é importado)
+function ensureXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  if (!xlsxLoading) xlsxLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = XLSX_URL;
+    s.onload = resolve;
+    s.onerror = () => { xlsxLoading = null; reject(new Error('falha ao carregar SheetJS')); };
+    document.head.appendChild(s);
+  });
+  return xlsxLoading;
+}
+
+async function loadWorkbook(file) {
+  try { await ensureXLSX(); }
+  catch { toast('Não foi possível carregar o leitor de Excel (SheetJS). Verifique a conexão.', 'error'); return; }
+
+  let wb;
+  try {
+    wb = XLSX.read(await file.arrayBuffer(), { type:'array', cellNF:true, cellDates:false });
+  } catch (e) {
+    console.error('XLSX.read', e);
+    toast('Não foi possível ler o arquivo Excel', 'error'); return;
+  }
+
+  const single = wb.SheetNames.length === 1;
+  const curTbl = document.getElementById('tableIn').value.trim();
+  const sheets = wb.SheetNames.map((name, i) => {
+    const grid = sheetToGrid(wb.Sheets[name]);
+    const sh = {
+      name,
+      hidden: !!(wb.Workbook?.Sheets?.[i]?.Hidden),
+      grid,
+      hdrRow: grid.length ? grid[0].n : 1,
+      table: single && curTbl ? curTbl : sheetTableName(name),
+      selIn: ''
+    };
+    parseSheet(sh);
+    sh.colCfg = makeColCfg(sh.headers, sh.rows);
+    sh.include = sh.headers.length > 0 && sh.rows.length > 0 && !sh.hidden;
+    return sh;
+  });
+
+  let first = sheets.findIndex(s => s.include);
+  if (first < 0) first = sheets.findIndex(s => s.headers.length && s.rows.length);
+  if (first < 0) { toast('Nenhuma aba com dados encontrada', 'error'); return; }
+
+  S.source = 'xlsx'; S.rawText = '';
+  S.sheets = sheets; S.sheetIdx = -1;
+  S.fileName = file.name; S.fileSize = file.size;
+
+  document.getElementById('dropZone').classList.add('hidden');
+  document.getElementById('fileLoaded').classList.remove('hidden');
+  document.getElementById('fName').textContent = file.name;
+  showSheetUI(true);
+  activateSheet(first);
+
+  const n = sheets.filter(s => s.include).length;
+  toast(`${sheets.length} aba(s) lida(s) · ${n} marcada(s) para geração`, 'success');
+}
+
+// Converte uma worksheet em [{n: nº da linha no Excel, cells: [string]}], só linhas não vazias
+function sheetToGrid(ws) {
+  if (!ws || !ws['!ref']) return [];
+  const rg = XLSX.utils.decode_range(ws['!ref']);
+  const dense = ws['!data'];
+  const get = (r, c) => dense ? dense[r]?.[c] : ws[XLSX.utils.encode_cell({ r, c })];
+
+  const all = [];
+  for (let r = rg.s.r; r <= rg.e.r; r++) {
+    const cells = [];
+    for (let c = rg.s.c; c <= rg.e.c; c++) cells.push(cellText(get(r, c)));
+    all.push(cells);
+  }
+
+  // Células mescladas: replica o valor da célula superior-esquerda em todo o bloco
+  (ws['!merges'] || []).forEach(m => {
+    const v = all[m.s.r - rg.s.r]?.[m.s.c - rg.s.c] ?? '';
+    for (let r = m.s.r; r <= m.e.r; r++)
+      for (let c = m.s.c; c <= m.e.c; c++)
+        if (all[r - rg.s.r]) all[r - rg.s.r][c - rg.s.c] = v;
+  });
+
+  return all
+    .map((cells, i) => ({ n: rg.s.r + i + 1, cells }))
+    .filter(row => row.cells.some(v => v !== ''));
+}
+
+// Valor de uma célula como texto, no formato que autoType()/fmtVal() já entendem
+function cellText(cell) {
+  if (!cell || cell.v == null) return '';
+  switch (cell.t) {
+    case 'n':
+      if (cell.z && XLSX.SSF.is_date(cell.z)) return excelDate(cell.v);
+      return String(Number(cell.v.toPrecision(15)));
+    case 'b': return cell.v ? 'true' : 'false';
+    case 'd': return cell.v instanceof Date ? cell.v.toISOString().slice(0, 19).replace('T', ' ') : String(cell.v);
+    case 'e': return '';
+    default:  return String(cell.v).trim();
+  }
+}
+
+// Serial de data do Excel → 'yyyy-mm-dd' | 'yyyy-mm-dd hh:mm:ss' | 'hh:mm:ss' (sem fuso horário)
+function excelDate(serial) {
+  const d = XLSX.SSF.parse_date_code(serial);
+  if (!d) return String(serial);
+  const p = (n, l = 2) => String(n).padStart(l, '0');
+  const date = `${p(d.y, 4)}-${p(d.m)}-${p(d.d)}`;
+  const time = `${p(d.H)}:${p(d.M)}:${p(Math.floor(d.S))}`;
+  if (serial < 1) return time;
+  return Number.isInteger(serial) ? date : `${date} ${time}`;
+}
+
+// Monta headers/rows da aba a partir de sh.grid e sh.hdrRow
+function parseSheet(sh) {
+  const idx = sh.grid.findIndex(r => r.n >= sh.hdrRow);
+  if (idx < 0) { sh.headers = []; sh.rows = []; return; }
+
+  const head = sh.grid[idx].cells;
+  const data = sh.grid.slice(idx + 1).map(r => r.cells);
+  // descarta colunas totalmente vazias (cabeçalho e dados)
+  const keep = head.map((_, c) => c).filter(c => head[c] !== '' || data.some(r => r[c] !== ''));
+
+  const seen = {};
+  sh.headers = keep.map((c, i) => {
+    let h = head[c] || `col_${i + 1}`;
+    if (seen[h]) h = `${h}_${++seen[h]}`; else seen[h] = 1;
+    return h;
+  });
+  sh.rows = data.map(r => keep.map(c => r[c]));
+}
+
+// Nome da aba → identificador SQL sugerido
+function sheetTableName(name) {
+  let t = name.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\W+/g, '_').replace(/^_+|_+$/g, '');
+  if (/^\d/.test(t)) t = 'T_' + t;
+  return t || 'Tabela';
+}
+
+function isXlsx() { return S.source === 'xlsx' && S.sheets.length > 0; }
+
+function showSheetUI(on) {
+  document.getElementById('sheetBox').classList.toggle('hidden', !on);
+  document.getElementById('delimRow').classList.toggle('hidden', on);
+}
+
+// Grava na aba ativa o que está na tela (mapeamento, tabela, coluna do IN)
+function syncActiveSheet() {
+  const sh = S.sheets[S.sheetIdx];
+  if (!sh) return;
+  sh.colCfg = S.colCfg;
+  sh.table  = document.getElementById('tableIn').value.trim();
+  sh.selIn  = document.getElementById('selInColSel').value;
+  const inp = document.querySelector(`#sheetList .sheet-tbl[data-i="${S.sheetIdx}"]`);
+  if (inp && inp.value !== sh.table) inp.value = sh.table;
+}
+
+function activateSheet(i) {
+  const sh = S.sheets[i];
+  if (!sh || !sh.headers.length) return;
+  syncActiveSheet();
+  S.sheetIdx = i;
+  S.headers = sh.headers; S.rows = sh.rows; S.colCfg = sh.colCfg;
+  document.getElementById('tableIn').value = sh.table;
+  document.getElementById('hdrRowIn').value = sh.hdrRow;
+  renderColMap();
+  if (sh.selIn) { document.getElementById('selInColSel').value = sh.selIn; }
+  updateFnCountBadge();
+  renderPreview();
+  renderSheetList();
+  updateSheetMeta();
+  checkTableRestore();
+}
+
+function onHdrRowChange() {
+  const sh = S.sheets[S.sheetIdx];
+  if (!sh) return;
+  const v = parseInt(document.getElementById('hdrRowIn').value);
+  if (!Number.isInteger(v) || v < 1) { document.getElementById('hdrRowIn').value = sh.hdrRow; return; }
+  const old = sh.hdrRow;
+  sh.hdrRow = v;
+  parseSheet(sh);
+  if (!sh.headers.length) {
+    toast(`Nenhuma linha com dados a partir da linha ${v}`, 'error');
+    sh.hdrRow = old; parseSheet(sh);
+    document.getElementById('hdrRowIn').value = old;
+    return;
+  }
+  S.headers = sh.headers; S.rows = sh.rows;
+  buildColMap(S.colCfg);
+  sh.colCfg = S.colCfg;
+  if (!sh.rows.length) sh.include = false;
+  renderPreview();
+  renderSheetList();
+  updateSheetMeta();
+}
+
+function setSheetInclude(i, on) {
+  S.sheets[i].include = on;
+}
+
+function setAllSheetsInclude(on) {
+  S.sheets.forEach(s => { s.include = on && s.headers.length > 0 && s.rows.length > 0; });
+  renderSheetList();
+}
+
+function setSheetTable(i, value) {
+  S.sheets[i].table = value.trim();
+  if (i === S.sheetIdx) {
+    document.getElementById('tableIn').value = S.sheets[i].table;
+    updateTblIndicator(S.sheets[i].table);
+  }
+}
+
+function renderSheetList() {
+  document.getElementById('sheetList').innerHTML = S.sheets.map((s, i) => {
+    const empty = !s.headers.length || !s.rows.length;
+    const meta = empty ? 'vazia' : `${s.rows.length.toLocaleString('pt-BR')} linhas · ${s.headers.length} cols`;
+    return `<div class="sheet-item ${i === S.sheetIdx ? 'active' : ''} ${empty ? 'empty' : ''}">
+      <input type="checkbox" ${s.include ? 'checked' : ''} ${empty ? 'disabled' : ''} onchange="setSheetInclude(${i},this.checked)" title="Incluir na geração">
+      <div class="sheet-info" ${empty ? '' : `onclick="activateSheet(${i})"`} title="${esc(s.name)}">
+        <div class="sheet-name">${esc(s.name)}${s.hidden ? '<span class="sheet-tag">oculta</span>' : ''}</div>
+        <div class="sheet-meta">${meta}</div>
+      </div>
+      <input type="text" class="sheet-tbl" data-i="${i}" value="${esc(s.table)}" placeholder="Tabela" oninput="setSheetTable(${i},this.value)" ${empty ? 'disabled' : ''}>
+    </div>`;
+  }).join('');
+}
+
+function updateSheetMeta() {
+  const sh = S.sheets[S.sheetIdx];
+  document.getElementById('fMeta').textContent =
+    `${S.sheets.length} aba(s) · ${sh.name}: ${S.rows.length.toLocaleString('pt-BR')} linhas · ${S.headers.length} colunas · ${(S.fileSize/1024).toFixed(1)} KB`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // COLUMN MAPPING
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function buildColMap(prevCfg) {
-  S.colCfg = S.headers.map((h, i) => {
+function makeColCfg(headers, rows, prevCfg) {
+  const cfg = headers.map((h, i) => {
     const prev = prevCfg && prevCfg.find(c => c.csvName === h);
     return {
       csvIndex: i, csvName: h,
       dbName: prev ? prev.dbName : h,
-      type: prev ? prev.type : autoType(S.rows.map(r => r[i] || '')),
+      type: prev ? prev.type : autoType(rows.map(r => r[i] || '')),
       isKey: prev ? prev.isKey : false,
       fixedValue: '',
       fn: prev && prev.fn ? prev.fn : { type:'none', params:{} }
@@ -1018,10 +1312,14 @@ function buildColMap(prevCfg) {
 
   if (prevCfg) {
     prevCfg.forEach(c => {
-      if (c.csvIndex === -1) S.colCfg.push(c);
+      if (c.csvIndex === -1) cfg.push(c);
     });
   }
+  return cfg;
+}
 
+function buildColMap(prevCfg) {
+  S.colCfg = makeColCfg(S.headers, S.rows, prevCfg);
   renderColMap();
   updateFnCountBadge();
 }
@@ -1294,7 +1592,7 @@ function clearFnAndClose() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function openFnPickerModal() {
   if (!S.colCfg.length) {
-    toast('Importe um CSV ou adicione colunas manuais primeiro', 'error');
+    toast('Importe um arquivo ou adicione colunas manuais primeiro', 'error');
     return;
   }
   renderFnColList();
@@ -1420,46 +1718,30 @@ function fmtVal(raw, type) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SQL GENERATION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function generateSQL() {
-  if (!S.headers.length) { toast('Importe um CSV primeiro', 'error'); return; }
-
-  const tbl  = document.getElementById('tableIn').value.trim();
-  const sch  = document.getElementById('schemaIn').value.trim();
-  if (!tbl) { toast('Informe o nome da tabela', 'error'); return; }
-  const table = sch ? `${sch}.${tbl}` : tbl;
-
-  const active = S.colCfg.filter(c => c.type !== 'SKIP');
+// Gera os comandos de UMA tabela (CSV ou uma aba do XLSX) e os acrescenta em L.
+// t = { rows, colCfg, selIn }, o = opções globais. Retorna { cmdCt } ou { error }.
+function buildSQLFor(L, t, table, o) {
+  const rows   = t.rows;
+  const active = t.colCfg.filter(c => c.type !== 'SKIP');
   const keys   = active.filter(c => c.isKey);
   const vals   = active.filter(c => !c.isKey);
 
   if (['UPDATE','DELETE'].includes(S.op) && !keys.length) {
-    toast(`${S.op} exige ao menos uma coluna WHERE marcada`, 'error'); return;
+    return { error: `${S.op} exige ao menos uma coluna WHERE marcada` };
   }
   if (S.op === 'MERGE' && !keys.length) {
-    toast('MERGE exige ao menos uma coluna WHERE para a cláusula ON', 'error'); return;
+    return { error: 'MERGE exige ao menos uma coluna WHERE para a cláusula ON' };
   }
-  const selIn = document.getElementById('optSelIn').checked && S.op === 'SELECT';
   let selInCol = null;
-  if (selIn) {
-    const selInSel = document.getElementById('selInColSel');
-    const idx = parseInt(selInSel.value);
-    selInCol = Number.isInteger(idx) ? S.colCfg[idx] : null;
+  if (o.selIn) {
+    const idx = parseInt(t.selIn);
+    selInCol = Number.isInteger(idx) ? t.colCfg[idx] : null;
     if (!selInCol || !selInCol.isKey || selInCol.type === 'SKIP') {
-      toast('Marque ao menos uma coluna WHERE e escolha qual usar no IN', 'error'); return;
+      return { error: 'Marque ao menos uma coluna WHERE e escolha qual usar no IN' };
     }
   }
 
-  const nc = document.getElementById('optNC').checked;
-  const tr = document.getElementById('optTR').checked;
-  const mv = document.getElementById('optMV').checked && S.op === 'INSERT';
-  const bs = parseInt(document.getElementById('optBS').value) || 500;
-  const go = document.getElementById('optGO').checked;
-  const gn = parseInt(document.getElementById('optGN').value) || 1000;
-
-  const L = [];
-  if (nc) L.push('SET NOCOUNT ON;');
-  if (tr) L.push('BEGIN TRAN;');
-  if (L.length) L.push('');
+  const { mv, bs, go, gn } = o;
 
   const colList = active.map(c => c.dbName).join(', ');
   let cmdCt = 0;
@@ -1473,14 +1755,14 @@ function generateSQL() {
   // ── INSERT multi-values
   if (mv) {
     let batch = [];
-    for (let i = 0; i < S.rows.length; i++) {
-      const r = S.rows[i];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       batch.push('  (' + active.map(c => fmtVal(getVal(r,c,i), c.type)).join(', ') + ')');
-      if (batch.length >= bs || i === S.rows.length - 1) {
+      if (batch.length >= bs || i === rows.length - 1) {
         L.push(`INSERT INTO ${table} (${colList}) VALUES`);
         L.push(batch.join(',\n') + ';');
         cmdCt++;
-        if (go && i < S.rows.length - 1) L.push('GO');
+        if (go && i < rows.length - 1) L.push('GO');
         batch = [];
       }
     }
@@ -1492,31 +1774,30 @@ function generateSQL() {
 
   // ── SELECT com IN (1 coluna WHERE escolhida vira IN; demais colunas WHERE
   //    marcadas viram AND com valor fixo, desde que sejam iguais em todas as linhas)
-  } else if (S.op === 'SELECT' && selIn) {
+  } else if (S.op === 'SELECT' && o.selIn) {
     const otherKeys = keys.filter(c => c !== selInCol);
     let badCol = null;
     for (const ok of otherKeys) {
       let base = null;
-      for (let i = 0; i < S.rows.length; i++) {
-        const v = fmtVal(getVal(S.rows[i], ok, i), ok.type);
+      for (let i = 0; i < rows.length; i++) {
+        const v = fmtVal(getVal(rows[i], ok, i), ok.type);
         if (base === null) base = v;
         else if (v !== base) { badCol = ok.dbName; break; }
       }
       if (badCol) break;
     }
     if (badCol) {
-      toast(`A coluna WHERE "${badCol}" varia entre as linhas — só a coluna escolhida para o IN pode variar. Desmarque-a do WHERE ou escolha-a para o IN.`, 'error');
-      return;
+      return { error: `A coluna WHERE "${badCol}" varia entre as linhas — só a coluna escolhida para o IN pode variar. Desmarque-a do WHERE ou escolha-a para o IN.` };
     }
     const seen = new Set();
     const inVals = [];
-    for (let i = 0; i < S.rows.length; i++) {
-      const fv = fmtVal(getVal(S.rows[i], selInCol, i), selInCol.type);
+    for (let i = 0; i < rows.length; i++) {
+      const fv = fmtVal(getVal(rows[i], selInCol, i), selInCol.type);
       if (!seen.has(fv)) { seen.add(fv); inVals.push(fv); }
     }
     if (inVals.length) {
       const whereParts = [`${selInCol.dbName} IN (${inVals.join(', ')})`];
-      otherKeys.forEach(ok => whereParts.push(`${ok.dbName} = ${fmtVal(getVal(S.rows[0], ok, 0), ok.type)}`));
+      otherKeys.forEach(ok => whereParts.push(`${ok.dbName} = ${fmtVal(getVal(rows[0], ok, 0), ok.type)}`));
       L.push(`SELECT ${colList} FROM ${table} WHERE ${whereParts.join(' AND ')};`);
       cmdCt = 1;
     } else {
@@ -1525,8 +1806,8 @@ function generateSQL() {
 
   // ── Por linha
   } else {
-    for (let i = 0; i < S.rows.length; i++) {
-      const r = S.rows[i];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       const kWhere = keys.map(c => `${c.dbName} = ${fmtVal(getVal(r,c,i), c.type)}`).join(' AND ');
 
       if (S.op === 'INSERT') {
@@ -1557,13 +1838,67 @@ function generateSQL() {
       }
 
       cmdCt++;
-      if (go && cmdCt % gn === 0 && i < S.rows.length - 1) L.push('GO');
+      if (go && cmdCt % gn === 0 && i < rows.length - 1) L.push('GO');
     }
   }
+
+  return { cmdCt };
+}
+
+function generateSQL() {
+  if (!S.headers.length) { toast('Importe um arquivo primeiro', 'error'); return; }
+
+  const sch   = document.getElementById('schemaIn').value.trim();
+  const multi = isXlsx() && document.getElementById('optAllSheets').checked;
+
+  // Alvos: cada aba marcada (modo multi) ou apenas o arquivo/aba ativa
+  let targets;
+  if (multi) {
+    syncActiveSheet();
+    const inc = S.sheets.filter(s => s.include && s.rows.length);
+    if (!inc.length) { toast('Marque ao menos uma aba para gerar', 'error'); return; }
+    const noTbl = inc.find(s => !s.table);
+    if (noTbl) { toast(`Informe o nome da tabela da aba "${noTbl.name}"`, 'error'); return; }
+    targets = inc.map(s => ({ label: s.name, tbl: s.table, rows: s.rows, colCfg: s.colCfg, headers: s.headers, selIn: s.selIn }));
+  } else {
+    const tbl = document.getElementById('tableIn').value.trim();
+    if (!tbl) { toast('Informe o nome da tabela', 'error'); return; }
+    targets = [{ label: null, tbl, rows: S.rows, colCfg: S.colCfg, headers: S.headers, selIn: document.getElementById('selInColSel').value }];
+  }
+
+  const nc = document.getElementById('optNC').checked;
+  const tr = document.getElementById('optTR').checked;
+  const o = {
+    selIn: document.getElementById('optSelIn').checked && S.op === 'SELECT',
+    mv: document.getElementById('optMV').checked && S.op === 'INSERT',
+    bs: parseInt(document.getElementById('optBS').value) || 500,
+    go: document.getElementById('optGO').checked,
+    gn: parseInt(document.getElementById('optGN').value) || 1000
+  };
+
+  const L = [];
+  if (nc) L.push('SET NOCOUNT ON;');
+  if (tr) L.push('BEGIN TRAN;');
+  if (L.length) L.push('');
+
+  let cmdCt = 0, rowCt = 0;
+  for (const [ti, t] of targets.entries()) {
+    const table = sch ? `${sch}.${t.tbl}` : t.tbl;
+    if (multi) {
+      if (ti > 0) { if (o.go) L.push('GO'); L.push(''); }
+      L.push(`-- ━━ Aba: ${t.label.replace(/[\r\n]+/g, ' ')} → ${table} (${t.rows.length.toLocaleString('pt-BR')} linhas)`);
+    }
+    const res = buildSQLFor(L, t, table, o);
+    if (res.error) { toast(multi ? `Aba "${esc(t.label)}": ${res.error}` : res.error, 'error'); return; }
+    cmdCt += res.cmdCt;
+    rowCt += t.rows.length;
+  }
+  const mv = o.mv;
 
   if (tr) { L.push(''); L.push('COMMIT;'); L.push('-- ROLLBACK; -- descomente para desfazer'); }
 
   S.sql = L.join('\n');
+  S.sqlName = multi ? S.fileName.replace(/\.[^.]+$/, '') : targets[0].tbl;
 
   const ta = document.getElementById('sqlOutput');
   ta.value = S.sql;
@@ -1572,17 +1907,19 @@ function generateSQL() {
   document.getElementById('btnCopy').classList.remove('hidden');
   document.getElementById('btnExport').classList.remove('hidden');
 
-  const fnCount = countActiveFns();
+  const fnCount = targets.reduce((n, t) => n + countActiveFns(t.colCfg), 0);
   const fnSuffix = fnCount > 0 ? ` · ${fnCount} função(ões) aplicada(s)` : '';
+  const sheetSuffix = multi ? ` · ${targets.length} aba(s)` : '';
   const stat = mv
-    ? `${cmdCt} INSERT(s) multi-values · ${S.rows.length.toLocaleString('pt-BR')} registros${fnSuffix}`
-    : `${cmdCt.toLocaleString('pt-BR')} comando(s)${fnSuffix}`;
+    ? `${cmdCt} INSERT(s) multi-values · ${rowCt.toLocaleString('pt-BR')} registros${sheetSuffix}${fnSuffix}`
+    : `${cmdCt.toLocaleString('pt-BR')} comando(s)${sheetSuffix}${fnSuffix}`;
   document.getElementById('outStat').textContent = stat;
   document.getElementById('outBadge').textContent = cmdCt.toLocaleString('pt-BR') + ' cmds';
 
   switchTab('output');
-  toast(`${cmdCt.toLocaleString('pt-BR')} comando(s) gerado(s) com sucesso`, 'success');
-  saveTableSchema();
+  toast(`${cmdCt.toLocaleString('pt-BR')} comando(s) gerado(s) com sucesso${sheetSuffix}`, 'success');
+  if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
+  else saveTableSchema();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1630,7 +1967,7 @@ function copySQL() {
 
 function exportSQL() {
   if (!S.sql) return;
-  const tbl  = document.getElementById('tableIn').value || 'output';
+  const tbl  = S.sqlName || document.getElementById('tableIn').value || 'output';
   const date = new Date().toISOString().slice(0,10);
   const blob = new Blob([S.sql], {type:'text/plain;charset=utf-8'});
   const url  = URL.createObjectURL(blob);
@@ -1645,13 +1982,12 @@ function exportSQL() {
 const TBL_PFX = 'csv2sql_tbl__';
 const tblKey  = n => TBL_PFX + n.toLowerCase().trim();
 
-function saveTableSchema() {
-  const tbl = document.getElementById('tableIn').value.trim();
-  if (!tbl || !S.colCfg.length) return;
+function saveTableSchema(tbl = document.getElementById('tableIn').value.trim(), colCfg = S.colCfg, headers = S.headers) {
+  if (!tbl || !colCfg.length) return;
   const data = {
     schema: document.getElementById('schemaIn').value,
     op: S.op,
-    colCfg: S.colCfg.map(c => ({
+    colCfg: colCfg.map(c => ({
       csvIndex: c.csvIndex, csvName: c.csvName,
       dbName: c.dbName, type: c.type,
       isKey: c.isKey, fixedValue: c.fixedValue || '',
@@ -1666,10 +2002,10 @@ function saveTableSchema() {
     ea: document.getElementById('optEA').value,
     dv: document.getElementById('optDV').value,
     savedAt: new Date().toISOString(),
-    csvHeaders: S.headers.slice()
+    csvHeaders: headers.slice()
   };
   localStorage.setItem(tblKey(tbl), JSON.stringify(data));
-  updateTblIndicator(tbl);
+  updateTblIndicator(document.getElementById('tableIn').value.trim());
 }
 
 function loadTableSchemaData(tbl) {
@@ -1705,6 +2041,7 @@ function checkTableRestore() {
 function onTableInput() {
   const tbl = document.getElementById('tableIn').value.trim();
   updateTblIndicator(tbl);
+  if (isXlsx()) syncActiveSheet();
   if (!tbl) hideRestoreBanner();
 }
 
@@ -1980,11 +2317,13 @@ function toggleDefaultRow() { document.getElementById('defRow').style.display = 
 // RESET
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function resetFile() {
-  S.rawText = ''; S.headers = []; S.rows = []; S.colCfg = []; S.sql = '';
+  S.rawText = ''; S.headers = []; S.rows = []; S.colCfg = []; S.sql = ''; S.sqlName = '';
+  S.source = 'csv'; S.sheets = []; S.sheetIdx = -1; S.fileName = ''; S.fileSize = 0;
+  showSheetUI(false);
   document.getElementById('dropZone').classList.remove('hidden');
   document.getElementById('fileLoaded').classList.add('hidden');
   document.getElementById('fileInput').value = '';
-  document.getElementById('colMapBody').innerHTML = '<div class="empty-panel">📥 Importe um CSV para mapear as colunas</div>';
+  document.getElementById('colMapBody').innerHTML = '<div class="empty-panel">📥 Importe um arquivo para mapear as colunas</div>';
   document.getElementById('prevTable').classList.add('hidden');
   document.getElementById('prevEmpty').classList.remove('hidden');
   document.getElementById('sqlOutput').classList.add('hidden');
@@ -2021,6 +2360,55 @@ dz.addEventListener('drop', e => {
 document.getElementById('fileInput').addEventListener('change', function() {
   if (this.files[0]) loadFile(this.files[0]);
 });
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SIDEBAR RESIZE (mínimo = largura padrão)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const LEFT_MIN = 370;
+const LEFT_KEY = 'csv2sql_ui__leftWidth';
+
+function setLeftWidth(w) {
+  const max = Math.max(LEFT_MIN, window.innerWidth - 320);  // mantém espaço para o painel direito
+  w = Math.round(Math.min(Math.max(w, LEFT_MIN), max));
+  document.documentElement.style.setProperty('--left-w', w + 'px');
+  return w;
+}
+
+(function initResizer() {
+  const handle = document.getElementById('panelResizer');
+  const panel  = document.querySelector('.left-panel');
+  let saved = null;
+  try { saved = parseInt(localStorage.getItem(LEFT_KEY)); } catch {}
+  if (saved) setLeftWidth(saved);
+
+  const save = w => { try { localStorage.setItem(LEFT_KEY, w); } catch {} };
+
+  handle.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    document.body.classList.add('resizing');
+    const startX = e.clientX, startW = panel.getBoundingClientRect().width;
+    let w = startW;
+    const move = ev => { w = setLeftWidth(startW + ev.clientX - startX); };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      save(w);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+  handle.addEventListener('dblclick', () => save(setLeftWidth(LEFT_MIN)));
+  window.addEventListener('resize', () => {
+    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--left-w'));
+    if (cur) setLeftWidth(cur);
+  });
+})();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TOAST

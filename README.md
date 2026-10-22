@@ -19,6 +19,14 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - Detecção automática de codificação (UTF-8, Latin-1)
 - Preview dos dados antes da conversão
 
+**Excel (XLSX / XLS / ODS) com várias abas**
+- Cada aba vira uma tabela, com mapeamento de colunas próprio
+- Nome da tabela sugerido a partir do nome da aba (editável)
+- Geração de um único script SQL com todas as abas marcadas
+- Linha do cabeçalho configurável por aba (para planilhas com título no topo)
+- Datas do Excel convertidas para `yyyy-mm-dd` / `yyyy-mm-dd hh:mm:ss`, células mescladas preenchidas
+- Leitura feita com [SheetJS](https://sheetjs.com), carregado sob demanda via CDN (requer internet)
+
 **Geração SQL**
 - INSERT - Inserção de novos registros
 - UPDATE - Atualização de registros existentes
@@ -41,9 +49,9 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 ## Como usar
 
 1. Acesse a ferramenta no navegador
-2. Carregue um arquivo CSV ou arraste-o para a zona de drop
-3. Selecione o delimitador (auto-detectado por padrão)
-4. Configure o schema e nome da tabela de destino
+2. Carregue um arquivo CSV ou Excel ou arraste-o para a zona de drop
+3. CSV: selecione o delimitador (auto-detectado por padrão). Excel: marque as abas a gerar e clique em cada uma para configurá-la
+4. Configure o schema e nome da tabela de destino (no Excel, uma tabela por aba)
 5. Escolha o tipo de operação SQL (INSERT, UPDATE, etc)
 6. Revise e ajuste os tipos de coluna conforme necessário
 7. Copie o SQL gerado e execute em seu banco de dados
@@ -51,6 +59,6 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 ## Requisitos
 
 - Navegador moderno com suporte a ES6
-- Arquivo CSV válido com no mínimo uma coluna
+- Arquivo CSV ou Excel válido com no mínimo uma coluna
 
 ## Estrutura do projeto

@@ -573,6 +573,10 @@ body.resizing{cursor:col-resize;user-select:none}
               <label class="opt-label" for="optTR">BEGIN TRAN / COMMIT</label>
             </div>
             <div class="opt-row">
+              <input type="checkbox" id="optRB" checked>
+              <label class="opt-label" for="optRB">ROLLBACK automático em caso de erro <span style="color:var(--text-dim);font-weight:400">(transação + TRY/CATCH; mostra o erro capturado)</span></label>
+            </div>
+            <div class="opt-row">
               <input type="checkbox" id="optMV" onchange="toggleMVRow()">
               <label class="opt-label" for="optMV">INSERT multi-values <span style="color:var(--text-dim);font-weight:400">(apenas INSERT)</span></label>
             </div>
@@ -806,12 +810,16 @@ const FN_DEFS = {
   sequence: {
     label: '🔢 Sequencial (chave manual)',
     params: [
-      { name:'start', label:'Valor inicial', type:'number', default:1 },
+      { name:'origin', label:'Início da sequência', type:'select', default:'fixed', options:[
+        ['fixed', 'Valor fixo (abaixo)'],
+        ['max',   'Continuar do MAX da tabela no banco (apenas INSERT)']
+      ]},
+      { name:'start', label:'Valor inicial (no modo MAX: usado se a tabela estiver vazia)', type:'number', default:1 },
       { name:'step',  label:'Incremento por linha', type:'number', default:1 },
-      { name:'pad',   label:'Padding com zeros à esquerda (0 = sem)', type:'number', default:0 }
+      { name:'pad',   label:'Padding com zeros à esquerda (0 = sem; ignorado no modo MAX)', type:'number', default:0 }
     ],
-    hint: 'Gera valores sequenciais: linha 1 = start, linha 2 = start+step, etc. Ideal para IDs manuais quando a coluna não tem auto-increment.',
-    warn: 'Se a coluna for tipo VARCHAR e você quiser zero-padding (ex: "000001"), use padding > 0. Para INT puro, padding deve ser 0.'
+    hint: 'Gera valores sequenciais: linha 1 = start, linha 2 = start+step, etc. No modo MAX o SQL lê SELECT MAX(coluna) da tabela de destino numa variável e continua dali — abas que vão para a mesma tabela seguem a mesma numeração, sem pular nem repetir.',
+    warn: 'Se a coluna for tipo VARCHAR e você quiser zero-padding (ex: "000001"), use padding > 0. Para INT puro, padding deve ser 0. O preview mostra os valores como se a tabela estivesse vazia.'
   },
   digits: {
     label: '🔣 Somente dígitos (CPF, CNPJ, telefone…)',
@@ -1515,6 +1523,11 @@ function renderFnParams(type, currentParams) {
     section.style.display = '';
     box.innerHTML = def.params.map(p => {
       const val = currentParams[p.name] !== undefined ? currentParams[p.name] : p.default;
+      if (p.type === 'select') return `<div class="fn-param-row">
+        <div class="fn-param-label">${esc(p.label)}</div>
+        <select data-param="${p.name}" onchange="updateFnPreview()">${p.options.map(([v, l]) =>
+          `<option value="${v}" ${v === val ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      </div>`;
       return `<div class="fn-param-row">
         <div class="fn-param-label">${esc(p.label)}</div>
         <input type="${p.type}" data-param="${p.name}" value="${esc(val)}" oninput="updateFnPreview()" ${p.type==='number'?'step="1"':''}>
@@ -1749,6 +1762,17 @@ function typeMismatches(t) {
   return out;
 }
 
+// Sequencial que continua do MAX(coluna) da tabela de destino (resolvido no banco via variável)
+function isSeqMax(c) {
+  return c.type !== 'SKIP' && c.fn?.type === 'sequence' && c.fn.params?.origin === 'max';
+}
+
+// Separador de lote: objeto (e não a string 'GO') para não confundir com dados
+const GO_SEP = { go: true };
+
+// Literal N'...' para nomes usados em verificações e mensagens
+const nstr = s => `N'${String(s).replace(/'/g, "''")}'`;
+
 // Gera os comandos de UMA tabela (CSV ou uma aba do XLSX) e os acrescenta em L.
 // t = { rows, colCfg, selIn }, o = opções globais. Retorna { cmdCt } ou { error }.
 function buildSQLFor(L, t, table, o) {
@@ -1783,17 +1807,25 @@ function buildSQLFor(L, t, table, o) {
     return applyFn(raw, c, rowIdx);
   };
 
+  // ── HELPER: valor formatado para INSERT; sequencial no modo MAX vira "@var + n" ──
+  const cell = (r, c, rowIdx) => {
+    if (S.op !== 'INSERT' || !isSeqMax(c)) return fmtVal(getVal(r, c, rowIdx), c.type);
+    const sq = o.seqVar(L, table, c);
+    sq.k++;
+    return `${sq.name} + ${sq.k * sq.step}`;
+  };
+
   // ── INSERT multi-values
   if (mv) {
     let batch = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      batch.push('  (' + active.map(c => fmtVal(getVal(r,c,i), c.type)).join(', ') + ')');
+      batch.push('  (' + active.map(c => cell(r,c,i)).join(', ') + ')');
       if (batch.length >= bs || i === rows.length - 1) {
         L.push(`INSERT INTO ${table} (${colList}) VALUES`);
         L.push(batch.join(',\n') + ';');
         cmdCt++;
-        if (go && i < rows.length - 1) L.push('GO');
+        if (go && i < rows.length - 1) o.goBreak(L);
         batch = [];
       }
     }
@@ -1842,7 +1874,7 @@ function buildSQLFor(L, t, table, o) {
       const kWhere = keys.map(c => `${qid(c.dbName)} = ${fmtVal(getVal(r,c,i), c.type)}`).join(' AND ');
 
       if (S.op === 'INSERT') {
-        L.push(`INSERT INTO ${table} (${colList}) VALUES (${active.map(c => fmtVal(getVal(r,c,i), c.type)).join(', ')});`);
+        L.push(`INSERT INTO ${table} (${colList}) VALUES (${active.map(c => cell(r,c,i)).join(', ')});`);
 
       } else if (S.op === 'UPDATE') {
         if (!vals.length) {
@@ -1869,11 +1901,106 @@ function buildSQLFor(L, t, table, o) {
       }
 
       cmdCt++;
-      if (go && cmdCt % gn === 0 && i < rows.length - 1) L.push('GO');
+      if (go && cmdCt % gn === 0 && i < rows.length - 1) o.goBreak(L);
     }
   }
 
   return { cmdCt };
+}
+
+// Monta o script com transação e TRY/CATCH por lote (L = linhas, GO_SEP e marcadores {ctx}).
+// Em erro: ROLLBACK, mensagem explícita (número, linha no script, aba/tabela e texto do SQL Server)
+// e SET NOEXEC ON para os lotes seguintes não rodarem. Um lote que nem executou (erro de
+// compilação, que o TRY não captura) é detectado no fim pela contagem em #csv2sql_lotes.
+function wrapTryCatch(head, L, targets, sch) {
+  const batches = [];
+  let cur, ctx = '';
+  const open = () => { cur = { lines: [], ctx: [] }; batches.push(cur); };
+  open();
+  for (const x of L) {
+    if (x === GO_SEP) { open(); continue; }
+    if (typeof x === 'object') { ctx = x.ctx; continue; }
+    if (x.trim() && !cur.ctx.includes(ctx)) cur.ctx.push(ctx);
+    cur.lines.push(x);
+  }
+  const data = batches.filter(b => b.ctx.length);
+  const n = data.length;
+
+  // Tabelas e colunas de destino precisam existir: senão o lote falha na compilação
+  const seen = new Set(), checks = [];
+  targets.forEach(t => {
+    const table = sch ? `${sch}.${t.tbl}` : t.tbl;
+    if (!seen.has(table)) {
+      seen.add(table);
+      checks.push(`IF OBJECT_ID(${nstr(table)}) IS NULL RAISERROR(N'Tabela %s não existe', 16, 1, ${nstr(table)});`);
+    }
+    t.colCfg.filter(c => c.type !== 'SKIP').forEach(c => {
+      const col = c.dbName.replace(/^\[(.*)\]$/, '$1').replace(/]]/g, ']');
+      const k = table + '\u0000' + col;
+      if (seen.has(k)) return;
+      seen.add(k);
+      checks.push(`IF COL_LENGTH(${nstr(table)}, ${nstr(col)}) IS NULL RAISERROR(N'Coluna %s não existe na tabela %s', 16, 1, ${nstr(col)}, ${nstr(table)});`);
+    });
+  });
+
+  const out = [];
+  let line = 0, batchStart = 0;
+  const push = (...xs) => xs.forEach(s => {
+    out.push(s);
+    line += String(s).split('\n').length;
+    if (s === 'GO') batchStart = line;
+  });
+  // ERROR_LINE() conta a partir do início do lote; somando o deslocamento vira a linha do script
+  const block = (ctxText, body) => {
+    const offset = batchStart;
+    push('BEGIN TRY', ...body, 'END TRY', 'BEGIN CATCH',
+      '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+      `  DECLARE @csv2sql_err NVARCHAR(2047) = CONCAT(N'Erro ', ERROR_NUMBER(), N' (severidade ', ERROR_SEVERITY(), N', estado ', ERROR_STATE(), N') na linha ', ERROR_LINE() + ${offset}, N' do script — ', ${nstr(ctxText)}, N': ', ERROR_MESSAGE());`,
+      "  PRINT N'❌ CARGA CANCELADA: ROLLBACK executado, nenhuma alteração foi gravada.';",
+      '  PRINT @csv2sql_err;',
+      "  RAISERROR(N'%s', 16, 1, @csv2sql_err);",
+      '  SET NOEXEC ON;  -- impede a execução dos lotes seguintes',
+      'END CATCH',
+      'GO');
+  };
+
+  push(...head,
+    'SET XACT_ABORT ON;',
+    "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;",
+    'CREATE TABLE #csv2sql_lotes (lote INT NOT NULL);',
+    'BEGIN TRAN;',
+    '-- Verifica se as tabelas e colunas de destino existem');
+  block('verificação de tabelas e colunas', checks);
+
+  data.forEach((b, i) => {
+    const ctxText = `${b.ctx.join(' + ')}, lote ${i + 1}/${n}`;
+    push('', `-- ── Lote ${i + 1}/${n} · ${b.ctx.join(' + ').replace(/[\r\n]+/g, ' ')}`);
+    block(ctxText, [
+      "IF @@TRANCOUNT = 0 RAISERROR(N'A transação não está mais ativa: um lote anterior falhou (veja o erro acima) e foi desfeito', 16, 1);",
+      ...b.lines.filter((s, j, a) => s.trim() || (j > 0 && j < a.length - 1)),
+      `INSERT INTO #csv2sql_lotes VALUES (${i + 1});`
+    ]);
+  });
+
+  push('',
+    '-- ── Finalização: só faz COMMIT se todos os lotes rodaram',
+    `IF (SELECT COUNT(*) FROM #csv2sql_lotes) = ${n} AND @@TRANCOUNT > 0`,
+    'BEGIN',
+    '  COMMIT TRAN;',
+    `  PRINT N'✅ Carga concluída: ${n} lote(s) executado(s), COMMIT realizado.';`,
+    'END',
+    'ELSE',
+    'BEGIN',
+    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+    '  DECLARE @csv2sql_lote INT = 1;',
+    '  WHILE EXISTS (SELECT 1 FROM #csv2sql_lotes WHERE lote = @csv2sql_lote) SET @csv2sql_lote += 1;',
+    "  RAISERROR(N'❌ CARGA CANCELADA: o lote %d não foi executado (veja o erro acima, ex.: erro de compilação). ROLLBACK executado, nenhuma alteração foi gravada.', 16, 1, @csv2sql_lote);",
+    'END',
+    'GO',
+    'SET NOEXEC OFF;',
+    'GO',
+    "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;");
+  return out;
 }
 
 function generateSQL() {
@@ -1907,18 +2034,45 @@ function generateSQL() {
     gn: parseInt(document.getElementById('optGN').value) || 1000
   };
 
-  const L = [];
-  if (nc) L.push('SET NOCOUNT ON;');
-  if (tr) L.push('BEGIN TRAN;');
-  if (L.length) L.push('');
+  const rb = document.getElementById('optRB').checked;
+  const inTx = rb || tr;
 
+  // Variáveis do sequencial MAX: uma por tabela+coluna. Abas da mesma tabela compartilham a
+  // variável e seguem a numeração; após cada GO a variável morre e é redeclarada relendo o MAX
+  // (que já inclui o que os lotes anteriores inseriram na mesma transação).
+  const seq = new Map(), seqNames = new Set();
+  o.seqVar = (L, table, c) => {
+    const key = table + '\u0000' + c.dbName;
+    let sq = seq.get(key);
+    if (!sq) {
+      const base = '@seq_' + (table.replace(/^.*\./, '') + '_' + c.dbName).replace(/[^\p{L}\p{N}_]/gu, '_');
+      let name = base, n = 2;
+      while (seqNames.has(name)) name = `${base}_${n++}`;
+      seqNames.add(name);
+      const p = c.fn.params || {};
+      const step = Number(p.step ?? 1) || 1, start = Number(p.start ?? 1);
+      sq = { name, step, start: Number.isFinite(start) ? start : 1, k: 0, declared: false };
+      seq.set(key, sq);
+    }
+    if (!sq.declared) {
+      const col = qid(c.dbName);
+      const max = c.type === 'INT' ? `MAX(${col})` : `MAX(TRY_CAST(${col} AS BIGINT))`;
+      const lock = inTx ? ' WITH (UPDLOCK, HOLDLOCK)' : '';
+      L.push(`DECLARE ${sq.name} BIGINT = (SELECT ISNULL(${max}, ${sq.start - sq.step}) FROM ${table}${lock});`);
+      sq.declared = true;
+      sq.k = 0;
+    }
+    return sq;
+  };
+  o.goBreak = L => { L.push(GO_SEP); seq.forEach(sq => { sq.declared = false; }); };
+
+  const L = [];
   let cmdCt = 0, rowCt = 0;
   for (const [ti, t] of targets.entries()) {
     const table = sch ? `${sch}.${t.tbl}` : t.tbl;
-    if (multi) {
-      if (ti > 0) { if (o.go) L.push('GO'); L.push(''); }
-      L.push(`-- ━━ Aba: ${t.label.replace(/[\r\n]+/g, ' ')} → ${table} (${t.rows.length.toLocaleString('pt-BR')} linhas)`);
-    }
+    if (ti > 0) { if (multi && o.go) o.goBreak(L); L.push(''); }
+    L.push({ ctx: multi ? `Aba "${t.label}" → ${table}` : table });
+    if (multi) L.push(`-- ━━ Aba: ${t.label.replace(/[\r\n]+/g, ' ')} → ${table} (${t.rows.length.toLocaleString('pt-BR')} linhas)`);
     const res = buildSQLFor(L, t, table, o);
     if (res.error) { toast(multi ? `Aba "${esc(t.label)}": ${res.error}` : res.error, 'error'); return; }
     cmdCt += res.cmdCt;
@@ -1926,14 +2080,22 @@ function generateSQL() {
   }
   const mv = o.mv;
 
-  if (tr) { L.push(''); L.push('COMMIT;'); L.push('-- ROLLBACK; -- descomente para desfazer'); }
-
   const oneLine = s => String(s).replace(/[\r\n]+/g, ' ');  // comentário SQL não pode quebrar linha
   const warns = targets.flatMap(t => typeMismatches(t).map(w => oneLine(
     `-- ⚠ ${t.label ? `Aba "${t.label}", ` : ''}coluna ${w.col} (${w.type}): ${w.count} valor(es) fora do tipo — ex. linha ${w.row}: "${w.value}"`)));
-  if (warns.length) L.unshift(...warns, '');
+  if (S.op !== 'INSERT') targets.forEach(t => t.colCfg.filter(isSeqMax).forEach(c => warns.push(oneLine(
+    `-- ⚠ ${t.label ? `Aba "${t.label}", ` : ''}coluna ${c.dbName}: sequencial "MAX da tabela" só vale para INSERT — usado o valor inicial fixo`))));
 
-  S.sql = L.join('\n');
+  const head = [...warns, ...(warns.length ? [''] : []), ...(nc ? ['SET NOCOUNT ON;'] : [])];
+  const out = rb ? wrapTryCatch(head, L, targets, sch) : [
+    ...head,
+    ...(tr ? ['BEGIN TRAN;'] : []),
+    ...(nc || tr ? [''] : []),
+    ...L.filter(x => typeof x === 'string' || x === GO_SEP).map(x => x === GO_SEP ? 'GO' : x),
+    ...(tr ? ['', 'COMMIT;', '-- ROLLBACK; -- descomente para desfazer'] : [])
+  ];
+
+  S.sql = out.join('\n');
   S.sqlName = multi ? S.fileName.replace(/\.[^.]+$/, '') : targets[0].tbl;
 
   const ta = document.getElementById('sqlOutput');
@@ -2032,6 +2194,7 @@ function saveTableSchema(tbl = document.getElementById('tableIn').value.trim(), 
     })),
     nc: document.getElementById('optNC').checked,
     tr: document.getElementById('optTR').checked,
+    rb: document.getElementById('optRB').checked,
     mv: document.getElementById('optMV').checked,
     bs: document.getElementById('optBS').value,
     go: document.getElementById('optGO').checked,
@@ -2107,6 +2270,7 @@ function restoreTableSchema() {
   if (data.op) setOp(data.op);
   if (data.nc !== undefined) document.getElementById('optNC').checked = data.nc;
   if (data.tr !== undefined) document.getElementById('optTR').checked = data.tr;
+  if (data.rb !== undefined) document.getElementById('optRB').checked = data.rb;
   if (data.mv !== undefined) document.getElementById('optMV').checked = data.mv;
   if (data.bs !== undefined) document.getElementById('optBS').value = data.bs;
   if (data.go !== undefined) document.getElementById('optGO').checked = data.go;
@@ -2233,6 +2397,7 @@ function getCfg() {
     })),
     nc: document.getElementById('optNC').checked,
     tr: document.getElementById('optTR').checked,
+    rb: document.getElementById('optRB').checked,
     mv: document.getElementById('optMV').checked,
     bs: document.getElementById('optBS').value,
     go: document.getElementById('optGO').checked,
@@ -2249,6 +2414,7 @@ function applyCfg(c) {
   if (c.delim     !== undefined) document.getElementById('delimSel').value = c.delim;
   if (c.nc        !== undefined) document.getElementById('optNC').checked = c.nc;
   if (c.tr        !== undefined) document.getElementById('optTR').checked = c.tr;
+  if (c.rb        !== undefined) document.getElementById('optRB').checked = c.rb;
   if (c.mv        !== undefined) document.getElementById('optMV').checked = c.mv;
   if (c.bs        !== undefined) document.getElementById('optBS').value = c.bs;
   if (c.go        !== undefined) document.getElementById('optGO').checked = c.go;

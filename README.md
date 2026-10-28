@@ -34,6 +34,20 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - SELECT - Consulta com cláusulas WHERE customizáveis
 - MERGE - Operação unificada de upsert
 
+**Sequencial a partir do banco**
+- A função 🔢 Sequencial (em coluna da planilha ou coluna manual) pode continuar do `MAX(coluna)` da tabela de destino
+- O valor é lido no banco numa variável (`DECLARE @seq_... = (SELECT ISNULL(MAX(col), inicio - 1) ...)`) e cada linha recebe `@seq_... + n`
+- Abas que vão para a mesma tabela compartilham a numeração, sem pular nem repetir; depois de cada `GO` o MAX é relido
+- Em transação, o MAX é lido com `WITH (UPDLOCK, HOLDLOCK)` para evitar colisão com cargas simultâneas
+- Vale só para INSERT (nas demais operações usa o valor inicial fixo, com aviso no topo do SQL)
+
+**ROLLBACK automático em caso de erro** (ligado por padrão)
+- Script inteiro em uma transação, com `TRY/CATCH` em cada lote
+- Antes de inserir, verifica se as tabelas e colunas de destino existem
+- Em erro: `ROLLBACK`, mensagem com número do erro, linha do script, aba/tabela/lote e o texto do SQL Server, e os lotes seguintes não rodam (`SET NOEXEC ON`)
+- O `COMMIT` só acontece se todos os lotes rodaram — um lote que falhou na compilação também cancela a carga
+- Requer SQL Server 2012+ e execução no SSMS/sqlcmd (usa `GO`)
+
 **Mapeamento de colunas**
 - Detecção automática de tipos (INT, VARCHAR, DATETIME, DECIMAL, BIT)
 - Ajuste manual de tipos e nomes de colunas

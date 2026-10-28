@@ -190,6 +190,7 @@ body.resizing{cursor:col-resize;user-select:none}
   transition:all var(--t);
 }
 .fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
+.ref-btn{font-style:normal;font-size:10px}
 .fn-btn.active{
   background:var(--purple);border-color:var(--purple);color:#000;
   box-shadow:0 0 8px var(--purple-dim);
@@ -704,10 +705,15 @@ body.resizing{cursor:col-resize;user-select:none}
 
       <div class="tab-content" id="tabSkipped">
         <div class="preview-wrap">
+          <div class="skip-bar">
+            <div class="skip-sum" id="skipSum"></div>
+            <button class="btn btn-ghost btn-sm" onclick="openIgnImport()" title="Colar o resultado das linhas ignoradas pelas regras de referência (final do script, no SSMS)">📥 Importar do banco</button>
+            <button class="btn btn-success btn-sm hidden" id="btnSkipExport" onclick="exportSkipped()">⬇ Exportar planilha (.xlsx)</button>
+          </div>
           <div class="empty-state" id="skipEmpty">
             <div class="es-icon">🚫</div>
             <div class="es-title">Nenhuma linha ignorada</div>
-            <div class="es-sub">Marque colunas como "Obrig." e ative "Ignorar linhas com campo obrigatório vazio" nas Opções Avançadas</div>
+            <div class="es-sub">Marque colunas como "Obrig." (campo vazio) ou use 🔗 regras de referência (validadas no banco — importe o resultado com "Importar do banco")</div>
           </div>
           <div id="skipBody" class="hidden"></div>
         </div>
@@ -794,6 +800,80 @@ body.resizing{cursor:col-resize;user-select:none}
     <div class="fn-modal-actions">
       <button class="btn btn-danger" onclick="clearFnAndClose()">🗑 Remover função</button>
       <button class="btn btn-purple" onclick="applyFnAndClose()">✓ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<!-- MODAL: Regra de referência (validação no banco)      -->
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="modal-ov" id="refModal" onclick="if(event.target===this)closeRefModal()">
+  <div class="modal modal-lg">
+    <div class="fn-modal-head">
+      <div class="fn-icon">🔗</div>
+      <div class="fn-title">
+        <h3>Regra de referência</h3>
+        <div class="fn-sub">Coluna: <strong id="refModalColName" style="color:var(--purple);font-family:var(--mono)">—</strong> · validada no banco, na hora da carga (apenas INSERT)</div>
+      </div>
+      <span class="modal-x" onclick="closeRefModal()">×</span>
+    </div>
+
+    <div class="fn-section">
+      <div class="fn-section-label">Tabela de referência</div>
+      <input type="text" id="refTable" placeholder="ex.: dbo.Materiais" oninput="updateRefPreview()">
+    </div>
+    <div class="fn-section">
+      <div class="fn-section-label">Coluna da referência que corresponde a este valor</div>
+      <input type="text" id="refCol" placeholder="ex.: Codigo" oninput="updateRefPreview()">
+    </div>
+    <div class="fn-section">
+      <div class="fn-section-label">Ignorar a linha quando o registro de referência…</div>
+      <select id="refMode" onchange="updateRefPreview()">
+        <option value="exists">for encontrado com a condição abaixo (ex.: material inativo)</option>
+        <option value="missing">não for encontrado com a condição abaixo (ex.: código inexistente)</option>
+      </select>
+    </div>
+    <div class="fn-section">
+      <div class="fn-section-label">Condição (SQL, colunas da tabela de referência — opcional)</div>
+      <input type="text" id="refCond" placeholder="ex.: Inativo = 'S'" oninput="updateRefPreview()">
+    </div>
+    <div class="fn-section">
+      <div class="fn-section-label">Motivo (aparece na lista de ignoradas)</div>
+      <input type="text" id="refMotivo" placeholder="ex.: Material inativo">
+    </div>
+
+    <div class="fn-section">
+      <div class="fn-section-label">Teste gerado para cada lote</div>
+      <div class="fn-preview"><div class="fn-preview-body" id="refPreview" style="padding:10px;font-family:var(--mono);font-size:11px;white-space:pre-wrap"></div></div>
+    </div>
+    <div class="fn-hint"><span>💡</span><span>O lote vai uma vez para uma tabela temporária; as linhas barradas são registradas e as demais entram num único INSERT … SELECT. Com índice em <em>Coluna da referência</em>, o custo é uma busca por lote.</span></div>
+
+    <div class="fn-modal-actions">
+      <button class="btn btn-danger" onclick="clearRefAndClose()">🗑 Remover regra</button>
+      <button class="btn btn-purple" onclick="applyRefAndClose()">✓ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<!-- MODAL: Importar ignoradas do banco                   -->
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="modal-ov" id="ignImportModal" onclick="if(event.target===this)closeIgnImport()">
+  <div class="modal modal-lg">
+    <div class="fn-modal-head">
+      <div class="fn-icon">📥</div>
+      <div class="fn-title">
+        <h3>Importar ignoradas do banco</h3>
+        <div class="fn-sub">No SSMS, selecione o resultado final do script (Aba, Tabela, Linha, Motivo, Coluna, Valor), copie e cole aqui</div>
+      </div>
+      <span class="modal-x" onclick="closeIgnImport()">×</span>
+    </div>
+    <div class="fn-section">
+      <textarea id="ignImportTxt" spellcheck="false" style="width:100%;min-height:200px;font-family:var(--mono);font-size:11px" placeholder="Jan&#9;dbo.ItDocEstoque&#9;5&#9;Material inativo&#9;produto&#9;P002"></textarea>
+    </div>
+    <div class="fn-modal-actions">
+      <button class="btn btn-ghost" onclick="closeIgnImport()">Cancelar</button>
+      <button class="btn btn-purple" onclick="importDbIgnored()">✓ Importar</button>
     </div>
   </div>
 </div>
@@ -1371,6 +1451,7 @@ function makeColCfg(headers, rows, prevCfg) {
       type: prev ? prev.type : autoType(rows.map(r => r[i] || '')),
       isKey: prev ? prev.isKey : false,
       req: prev ? !!prev.req : false,
+      ref: prev ? prev.ref || null : null,
       fixedValue: '',
       fn: prev && prev.fn ? prev.fn : { type:'none', params:{} }
     };
@@ -1480,6 +1561,7 @@ function colRow(col, i, showKey, showReq) {
       <div class="db-col-cell">
         <input type="text" value="${esc(col.dbName)}" onchange="updCol(${i},'dbName',this.value)" ${skip?'disabled':''}>
         <button type="button" class="fn-btn ${hasFn?'active':''}" onclick="openFnModal(${i})" title="${fnTitle}" ${skip?'disabled':''}>ƒ</button>
+        ${S.op === 'INSERT' ? `<button type="button" class="fn-btn ref-btn ${col.ref?'active':''}" onclick="openRefModal(${i})" title="${col.ref ? `Regra: ${esc(col.ref.motivo || col.ref.table)} — clique para editar` : 'Regra de referência (validar no banco)'}" ${skip?'disabled':''}>🔗</button>` : ''}
       </div>
     </td>
     <td><select onchange="updCol(${i},'type',this.value)">
@@ -1820,6 +1902,19 @@ function isSeqMax(c) {
   return c.type !== 'SKIP' && c.fn?.type === 'sequence' && c.fn.params?.origin === 'max';
 }
 
+// Regra de referência da coluna (validada no banco): { table, col, mode: 'exists'|'missing', cond, motivo }
+function hasRefRule(c) {
+  return c.type !== 'SKIP' && !!(c.ref && c.ref.table && c.ref.col);
+}
+
+// Teste SQL que é verdadeiro quando a linha deve ser ignorada pela regra (val = expressão do valor)
+function refTest(c, val) {
+  const r = c.ref;
+  const where = [`r.${qid(r.col.trim())} = ${val}`, ...(r.cond && r.cond.trim() ? [`(${oneLineSql(r.cond.trim())})`] : [])].join(' AND ');
+  const ex = `EXISTS (SELECT 1 FROM ${r.table.trim()} r WHERE ${where})`;
+  return r.mode === 'missing' ? `${val} IS NOT NULL AND NOT ${ex}` : ex;
+}
+
 // Separador de lote: objeto (e não a string 'GO') para não confundir com dados
 const GO_SEP = { go: true };
 
@@ -1868,8 +1963,46 @@ function buildSQLFor(L, t, table, o) {
     return `${sq.name} + ${sq.k * sq.step}`;
   };
 
+  // ── INSERT com regras de referência: cada bloco vai uma vez para uma tabela temporária; as linhas
+  //    barradas pelas regras são registradas em #csv2sql_ignoradas e as demais entram num único
+  //    INSERT … SELECT (uma busca na tabela de referência por bloco, não por linha). O nome da
+  //    temporária é único (#csv2sql_loteN): o SQL Server não compila dois SELECT INTO da mesma
+  //    #tabela num mesmo lote.
+  const refCols = S.op === 'INSERT' ? active.filter(hasRefRule) : [];
+  if (refCols.length) {
+    const staged = active.filter(c => !isSeqMax(c));
+    const alias = c => `[c${staged.indexOf(c)}]`;
+    const lineNo = i => t.rowNums?.[i] ?? i + 2;
+    const chunkSize = Math.max(1, bs);
+    for (let i0 = 0; i0 < rows.length; i0 += chunkSize) {
+      const chunk = rows.slice(i0, i0 + chunkSize);
+      const st = `#csv2sql_lote${o.stageN = (o.stageN || 0) + 1}`;
+      L.push(`IF OBJECT_ID(N'tempdb..${st}') IS NOT NULL DROP TABLE ${st};`);
+      L.push(`SELECT * INTO ${st} FROM (VALUES`);
+      L.push(chunk.map((r, j) => '  (' + [lineNo(i0 + j), ...staged.map(c => fmtVal(getVal(r, c, i0 + j), c.type))].join(', ') + ')').join(',\n'));
+      L.push(`) AS v (csv2sql_linha${staged.length ? ', ' + staged.map(alias).join(', ') : ''});`);
+      refCols.forEach(c => L.push(
+        `INSERT INTO #csv2sql_ignoradas (aba, tabela, linha, motivo, coluna, valor) SELECT ${nstr(t.label || '')}, ${nstr(table)}, s.csv2sql_linha, ${nstr(c.ref.motivo || 'Regra de referência')}, ${nstr(c.dbName)}, CONVERT(NVARCHAR(4000), s.${alias(c)}) FROM ${st} s WHERE ${refTest(c, `s.${alias(c)}`)};`));
+      const seqCols = active.filter(isSeqMax).map(c => [c, o.seqVar(L, table, c)]);
+      const sel = active.map(c => {
+        const sq = seqCols.find(([x]) => x === c)?.[1];
+        return sq ? `${sq.name} + ROW_NUMBER() OVER (ORDER BY s.csv2sql_linha) * ${sq.step}` : `s.${alias(c)}`;
+      });
+      L.push(`INSERT INTO ${table} (${colList})`);
+      L.push(`SELECT ${sel.join(', ')} FROM ${st} s`);
+      L.push(`WHERE ${refCols.map(c => `NOT (${refTest(c, `s.${alias(c)}`)})`).join(' AND ')};`);
+      // o sequencial avança só pelo que entrou de fato
+      if (seqCols.length) {
+        L.push(`SELECT ${seqCols.map(([, sq]) => `${sq.name} = ${sq.name} + @@ROWCOUNT * ${sq.step}`).join(', ')};`);
+        seqCols.forEach(([, sq]) => { sq.k = 0; });
+      }
+      L.push(`DROP TABLE ${st};`);
+      cmdCt++;
+      if (go && i0 + chunkSize < rows.length) o.goBreak(L);
+    }
+
   // ── INSERT multi-values
-  if (mv) {
+  } else if (mv) {
     let batch = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -1967,7 +2100,7 @@ function buildSQLFor(L, t, table, o) {
 // (número, linha no script, aba/tabela/lote e texto do SQL Server), e os lotes restantes dela são
 // pulados (#csv2sql_falhas); as transações seguintes continuam. Um lote que nem executou (erro de
 // compilação, que o TRY não captura) é detectado no COMMIT pela contagem em #csv2sql_lotes.
-function wrapTryCatch(head, L, units, sch) {
+function wrapTryCatch(head, L, units, sch, tail = []) {
   const us = units.map(u => ({ ...u, batches: [] }));
   let u = us[0], cur, ctx = '';
   const open = () => { cur = { lines: [], ctx: [] }; u.batches.push(cur); };
@@ -2082,7 +2215,8 @@ function wrapTryCatch(head, L, units, sch) {
       ? `⚠ Carga com falhas: %d de ${N} transação(ões) desfeita(s) com ROLLBACK (veja os erros acima); as demais foram gravadas.`
       : '❌ CARGA CANCELADA: ROLLBACK executado, nenhuma alteração foi gravada (veja o erro acima).')}, 16, 1${N > 1 ? ', @csv2sql_f' : ''});`,
     "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;",
-    "IF OBJECT_ID(N'tempdb..#csv2sql_falhas') IS NOT NULL DROP TABLE #csv2sql_falhas;");
+    "IF OBJECT_ID(N'tempdb..#csv2sql_falhas') IS NOT NULL DROP TABLE #csv2sql_falhas;",
+    ...tail);
   return out;
 }
 
@@ -2134,7 +2268,7 @@ function generateSQL() {
     if (!miss.length) return t;
     if (!skipOn) { reqWarns.push({ t, ...miss[0], count: miss.length }); return t; }
     skipped.push({ label: t.label, tbl: t.tbl, headers: t.headers,
-      rows: miss.map(m => ({ num: m.num, missing: m.missing, missIdx: m.missIdx, cells: t.rows[m.i] })) });
+      rows: miss.map(m => ({ num: m.num, motivo: `Campo obrigatório vazio: ${m.missing.join(', ')}`, missIdx: m.missIdx, cells: t.rows[m.i] })) });
     const drop = new Set(miss.map(m => m.i));
     return { ...t, total: t.rows.length,
       rows: t.rows.filter((_, i) => !drop.has(i)),
@@ -2216,13 +2350,35 @@ function generateSQL() {
   const units = perSheet
     ? targets.map(t => ({ label: `Aba "${t.label}" → ${sch ? `${sch}.${t.tbl}` : t.tbl}`, targets: [t] }))
     : [{ label: multi ? `${targets.length} aba(s)` : (sch ? `${sch}.${targets[0].tbl}` : targets[0].tbl), targets }];
-  const head = [...warns, ...(warns.length ? [''] : []), ...(nc ? ['SET NOCOUNT ON;'] : [])];
-  const out = rb ? wrapTryCatch(head, L, units, sch) : [
+  if (S.op !== 'INSERT') targets.forEach(t => t.colCfg.filter(hasRefRule).forEach(c => warns.push(oneLine(
+    `-- ⚠ ${where(t)}coluna ${c.dbName}: regra de referência só vale para INSERT — não aplicada`))));
+
+  // Regras de referência: as linhas barradas no banco são listadas no fim (para importar no gerador)
+  const hasRef = S.op === 'INSERT' && targets.some(t => t.colCfg.some(hasRefRule));
+  const refHead = hasRef ? [
+    "IF OBJECT_ID(N'tempdb..#csv2sql_ignoradas') IS NOT NULL DROP TABLE #csv2sql_ignoradas;",
+    'CREATE TABLE #csv2sql_ignoradas (id INT IDENTITY PRIMARY KEY, aba NVARCHAR(128), tabela NVARCHAR(300), linha INT, motivo NVARCHAR(400), coluna NVARCHAR(128), valor NVARCHAR(4000));'
+  ] : [];
+  const refTail = hasRef ? ['',
+    '-- ── Linhas ignoradas pelas regras de referência (copie o resultado com cabeçalhos e use',
+    '--    "📥 Importar do banco" na aba 🚫 Ignoradas do gerador)',
+    'IF EXISTS (SELECT 1 FROM #csv2sql_ignoradas)',
+    'BEGIN',
+    '  DECLARE @csv2sql_ign INT = (SELECT COUNT(*) FROM #csv2sql_ignoradas);',
+    "  PRINT CONCAT(N'🚫 ', @csv2sql_ign, N' linha(s) ignorada(s) pelas regras de referência — veja o resultado.');",
+    '  SELECT aba AS Aba, tabela AS Tabela, linha AS Linha, motivo AS Motivo, coluna AS Coluna, valor AS Valor FROM #csv2sql_ignoradas ORDER BY id;',
+    'END',
+    'DROP TABLE #csv2sql_ignoradas;'
+  ] : [];
+
+  const head = [...warns, ...(warns.length ? [''] : []), ...(nc ? ['SET NOCOUNT ON;'] : []), ...refHead];
+  const out = rb ? wrapTryCatch(head, L, units, sch, refTail) : [
     ...head,
     ...(tr ? ['BEGIN TRAN;'] : []),
-    ...(nc || tr ? [''] : []),
+    ...(nc || tr || hasRef ? [''] : []),
     ...L.filter(x => typeof x === 'string' || x === GO_SEP).map(x => x === GO_SEP ? 'GO' : x),
-    ...(tr ? ['', 'COMMIT;', '-- ROLLBACK; -- descomente para desfazer'] : [])
+    ...(tr ? ['', 'COMMIT;', '-- ROLLBACK; -- descomente para desfazer'] : []),
+    ...refTail
   ];
 
   S.sql = out.join('\n');
@@ -2288,22 +2444,22 @@ function renderSkipped() {
   document.getElementById('skipBadge').textContent = total.toLocaleString('pt-BR');
   const body = document.getElementById('skipBody');
   document.getElementById('skipEmpty').classList.toggle('hidden', total > 0);
+  document.getElementById('btnSkipExport').classList.toggle('hidden', !total);
+  document.getElementById('skipSum').innerHTML = total
+    ? `🚫 <strong>${total.toLocaleString('pt-BR')}</strong> linha(s) ignorada(s)${groups.length > 1 ? ` · ${groups.length} aba(s)` : ''}`
+    : '';
   body.classList.toggle('hidden', !total);
   if (!total) { body.innerHTML = ''; return; }
 
   body.innerHTML = `
-    <div class="skip-bar">
-      <div class="skip-sum">🚫 <strong>${total.toLocaleString('pt-BR')}</strong> linha(s) não entraram no SQL por campo obrigatório vazio${groups.length > 1 ? ` · ${groups.length} aba(s)` : ''}</div>
-      <button class="btn btn-success btn-sm" onclick="exportSkipped()">⬇ Exportar planilha (.xlsx)</button>
-    </div>
     ${groups.map(g => {
       const idx = g.headers.map((h, i) => i);
       return `<div class="skip-group">
         <div class="skip-title">${g.label ? `Aba "${esc(g.label)}" → ` : ''}${esc(g.tbl)} · ${g.rows.length.toLocaleString('pt-BR')} linha(s)</div>
         <div style="overflow:auto">
           <table class="preview-table">
-            <thead><tr><th>Linha</th><th>Campos vazios</th>${g.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-            <tbody>${g.rows.slice(0, SKIP_SHOW).map(r => `<tr><td>${r.num}</td><td>${esc(r.missing.join(', '))}</td>${idx.map(i =>
+            <thead><tr><th>Linha</th><th>Motivo</th>${g.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+            <tbody>${g.rows.slice(0, SKIP_SHOW).map(r => `<tr><td>${r.num}</td><td>${esc(r.motivo)}</td>${idx.map(i =>
               `<td class="${r.missIdx.includes(i) ? 'miss' : ''}">${esc(r.cells[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody>
           </table>
         </div>
@@ -2321,8 +2477,8 @@ async function exportSkipped() {
   const wb = XLSX.utils.book_new();
   const used = new Set();
   groups.forEach(g => {
-    const aoa = [['Linha no arquivo', 'Tabela destino', 'Campos obrigatórios vazios', ...g.headers],
-      ...g.rows.map(r => [r.num, g.tbl, r.missing.join(', '), ...g.headers.map((_, i) => r.cells[i] ?? '')])];
+    const aoa = [['Linha no arquivo', 'Tabela destino', 'Motivo', ...g.headers],
+      ...g.rows.map(r => [r.num, g.tbl, r.motivo, ...g.headers.map((_, i) => r.cells[i] ?? '')])];
     // nome de aba no Excel: até 31 caracteres, sem : \ / ? * [ ] e único
     const base = (g.label || 'Ignoradas').replace(/[:\\/?*\[\]]/g, '_').slice(0, 31) || 'Ignoradas';
     let name = base, n = 2;
@@ -2333,6 +2489,125 @@ async function exportSkipped() {
   const base = (S.sqlName || S.fileName || 'carga').replace(/\.[^.]+$/, '');
   XLSX.writeFile(wb, `${base}_ignoradas_${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast('Planilha de linhas ignoradas exportada!', 'success');
+}
+
+function openIgnImport() {
+  if (!S.headers.length) { toast('Importe o arquivo de origem primeiro (as linhas são casadas com ele)', 'error'); return; }
+  document.getElementById('ignImportTxt').value = '';
+  document.getElementById('ignImportModal').classList.add('open');
+  document.getElementById('ignImportTxt').focus();
+}
+
+function closeIgnImport() {
+  document.getElementById('ignImportModal').classList.remove('open');
+}
+
+// Cola do SSMS (Aba, Tabela, Linha, Motivo, Coluna, Valor separados por tab) → S.skipped,
+// casando cada linha com o arquivo carregado pela aba e pelo nº da linha no arquivo
+function importDbIgnored() {
+  const lines = document.getElementById('ignImportTxt').value.replace(/\r/g, '').split('\n').filter(l => l.trim());
+  S.skipped = S.skipped || [];
+  let added = 0, unmatched = 0;
+  lines.forEach(l => {
+    const p = l.split('\t').map(x => x.trim());
+    if (p.length < 6) return;
+    const [aba, tabela, linha, motivo, coluna, valor] = p;
+    const num = parseInt(linha);
+    if (!Number.isInteger(num)) return;  // cabeçalho ou lixo
+
+    const sh = isXlsx() ? (aba ? S.sheets.find(s => s.name === aba) : S.sheets[S.sheetIdx]) : null;
+    if (isXlsx() && !sh) { unmatched++; return; }
+    const src = sh || { headers: S.headers, rows: S.rows, rowNums: S.rowNums, colCfg: S.colCfg };
+    const ri = (src.rowNums || []).indexOf(num);
+    const tbl = tabela.replace(/^.*\./, '');
+    const label = aba || null;
+
+    let g = S.skipped.find(x => x.label === label && x.tbl === tbl);
+    if (!g) { g = { label, tbl, headers: src.headers, rows: [] }; S.skipped.push(g); }
+    const text = `${motivo}: ${coluna} = ${valor}`;
+    const ci = src.colCfg.find(c => c.dbName === coluna)?.csvIndex;
+    const ex = g.rows.find(r => r.num === num);
+    if (ex) {
+      if (ex.motivo.split(' · ').includes(text)) return;
+      ex.motivo += ` · ${text}`;
+      if (ci >= 0) ex.missIdx.push(ci);
+    } else {
+      g.rows.push({ num, motivo: text, missIdx: ci >= 0 ? [ci] : [], cells: ri >= 0 ? src.rows[ri] : [] });
+    }
+    if (ri < 0) unmatched++;
+    added++;
+  });
+  S.skipped.forEach(g => g.rows.sort((a, b) => a.num - b.num));
+  closeIgnImport();
+  renderSkipped();
+  switchTab('skipped');
+  if (!added) { toast('Nada importado — cole as 6 colunas do resultado (Aba, Tabela, Linha, Motivo, Coluna, Valor)', 'error'); return; }
+  toast(`${added} linha(s) importada(s) do banco${unmatched ? ` · ${unmatched} sem correspondência no arquivo carregado` : ''}`, unmatched ? 'info' : 'success');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// REGRA DE REFERÊNCIA (modal)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let refEditingIdx = -1;
+
+function openRefModal(i) {
+  const c = S.colCfg[i];
+  if (!c) return;
+  refEditingIdx = i;
+  const r = c.ref || { table: '', col: '', mode: 'exists', cond: '', motivo: '' };
+  document.getElementById('refModalColName').textContent = c.dbName;
+  document.getElementById('refTable').value  = r.table;
+  document.getElementById('refCol').value    = r.col;
+  document.getElementById('refMode').value   = r.mode || 'exists';
+  document.getElementById('refCond').value   = r.cond || '';
+  document.getElementById('refMotivo').value = r.motivo || '';
+  updateRefPreview();
+  document.getElementById('refModal').classList.add('open');
+}
+
+function closeRefModal() {
+  document.getElementById('refModal').classList.remove('open');
+  refEditingIdx = -1;
+}
+
+function readRefFromUI() {
+  return {
+    table:  document.getElementById('refTable').value.trim(),
+    col:    document.getElementById('refCol').value.trim(),
+    mode:   document.getElementById('refMode').value,
+    cond:   document.getElementById('refCond').value.trim(),
+    motivo: document.getElementById('refMotivo').value.trim()
+  };
+}
+
+function updateRefPreview() {
+  const c = S.colCfg[refEditingIdx];
+  if (!c) return;
+  const r = readRefFromUI();
+  document.getElementById('refPreview').textContent = r.table && r.col
+    ? `ignora a linha se:\n${refTest({ ref: r }, `[${c.dbName}]`)}`
+    : 'Informe a tabela e a coluna de referência.';
+}
+
+function applyRefAndClose() {
+  const c = S.colCfg[refEditingIdx];
+  if (!c) return;
+  const r = readRefFromUI();
+  if (!r.table || !r.col) { toast('Informe a tabela e a coluna de referência', 'error'); return; }
+  if (!r.motivo) r.motivo = r.mode === 'missing' ? `${c.dbName} não encontrado em ${r.table}` : `${c.dbName} barrado por ${r.table}`;
+  c.ref = r;
+  closeRefModal();
+  renderColMap();
+  toast(`Regra de referência aplicada a "${c.dbName}"`, 'success');
+}
+
+function clearRefAndClose() {
+  const c = S.colCfg[refEditingIdx];
+  if (!c) return;
+  c.ref = null;
+  closeRefModal();
+  renderColMap();
+  toast(`Regra de referência removida de "${c.dbName}"`, 'info');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2381,7 +2656,7 @@ function cfgSnapshot(colCfg) {
   return colCfg.map(c => ({
     csvIndex: c.csvIndex, csvName: c.csvName,
     dbName: c.dbName, type: c.type,
-    isKey: c.isKey, req: !!c.req, fixedValue: c.fixedValue || '',
+    isKey: c.isKey, req: !!c.req, ref: c.ref || null, fixedValue: c.fixedValue || '',
     fn: c.fn || { type:'none', params:{} }
   }));
 }
@@ -2503,6 +2778,7 @@ function restoreTableSchema() {
         col.type    = saved.type;
         col.isKey   = saved.isKey;
         col.req     = !!saved.req;
+        col.ref     = saved.ref || null;
         col.fn      = saved.fn || { type:'none', params:{} };
       }
     });
@@ -2744,6 +3020,7 @@ function applyCfg(c) {
           f.type   = saved.type;
           f.isKey  = saved.isKey;
           f.req    = !!saved.req;
+          f.ref    = saved.ref || null;
           f.fn     = saved.fn || { type:'none', params:{} };
         }
       }

@@ -25,6 +25,7 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - Geração de um único script SQL com todas as abas marcadas
 - Linha do cabeçalho configurável por aba (para planilhas com título no topo)
 - Datas do Excel convertidas para `yyyy-mm-dd` / `yyyy-mm-dd hh:mm:ss`, células mescladas preenchidas
+- Config salva por arquivo Excel: ao gerar o SQL, guarda todas as abas (marcadas, tabela de destino, linha do cabeçalho, mapeamento, funções e colunas manuais) e as opções; ao abrir o mesmo arquivo de novo, um aviso oferece **↩ Restaurar** tudo de uma vez (abas casadas pelo nome, colunas pelo cabeçalho)
 - Leitura feita com [SheetJS](https://sheetjs.com), carregado sob demanda via CDN (requer internet)
 
 **Geração SQL**

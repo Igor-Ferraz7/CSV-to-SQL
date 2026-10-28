@@ -394,6 +394,7 @@ body.resizing{cursor:col-resize;user-select:none}
   background:linear-gradient(90deg,rgba(255,215,64,.08),transparent);
   border-bottom:1px solid rgba(255,215,64,.25);flex-wrap:wrap;
 }
+.xlsx-banner{border:1px solid rgba(255,215,64,.25);border-radius:var(--r);margin-bottom:10px;padding:8px 10px}
 .rb-icon{font-size:14px;flex-shrink:0}
 .rb-text{flex:1;font-size:11px;color:var(--yellow);min-width:0}
 .rb-text strong{font-family:var(--mono)}
@@ -475,6 +476,17 @@ body.resizing{cursor:col-resize;user-select:none}
               <button class="btn btn-ghost btn-xs" onclick="resetFile()">✕</button>
             </div>
             <div id="sheetBox" class="hidden" style="margin-top:10px">
+              <div id="xlsxBanner" class="restore-banner xlsx-banner hidden">
+                <span class="rb-icon">📗</span>
+                <div class="rb-text">
+                  Config salva encontrada para este Excel
+                  <span class="rb-meta" id="xbMeta"></span>
+                </div>
+                <div class="rb-actions">
+                  <button class="btn-restore" onclick="restoreXlsxCfg()">↩ Restaurar</button>
+                  <button class="btn btn-ghost btn-xs" onclick="hideXlsxBanner()">✕</button>
+                </div>
+              </div>
               <div class="frow">
                 <label class="flabel" style="display:flex;align-items:center;justify-content:space-between">
                   <span>Abas da planilha</span>
@@ -684,7 +696,7 @@ body.resizing{cursor:col-resize;user-select:none}
   <div class="modal">
     <div class="modal-tabs">
       <div class="modal-tab active" id="mtabPerfis" onclick="switchModalTab('perfis')">💾 Perfis</div>
-      <div class="modal-tab" id="mtabTabelas" onclick="switchModalTab('tabelas')">🕐 Tabelas Salvas</div>
+      <div class="modal-tab" id="mtabTabelas" onclick="switchModalTab('tabelas')">🕐 Tabelas e Excel Salvos</div>
       <div style="flex:1"></div>
       <span class="modal-x" onclick="closeProfileModal()" style="padding:10px 0 10px 10px">×</span>
     </div>
@@ -703,6 +715,8 @@ body.resizing{cursor:col-resize;user-select:none}
       <div id="tblHistList" style="max-height:320px;overflow-y:auto;margin-bottom:12px">
         <div class="tbl-empty">Nenhuma tabela com config salva ainda.<br><span style="font-size:10px;opacity:.6">Gere um SQL para salvar automaticamente.</span></div>
       </div>
+      <div class="flabel" style="margin:4px 0 6px">Arquivos Excel</div>
+      <div id="xlsxHistList" style="max-height:220px;overflow-y:auto;margin-bottom:12px"></div>
       <div style="font-size:10px;color:var(--text-dim);padding:4px 0 0;border-top:1px solid var(--border)">
         ℹ As configurações são salvas automaticamente após cada geração de SQL.
       </div>
@@ -1130,6 +1144,7 @@ async function loadWorkbook(file) {
   document.getElementById('fName').textContent = file.name;
   showSheetUI(true);
   activateSheet(first);
+  checkXlsxRestore();
 
   const n = sheets.filter(s => s.include).length;
   toast(`${sheets.length} aba(s) lida(s) · ${n} marcada(s) para geração`, 'success');
@@ -2119,6 +2134,7 @@ function generateSQL() {
   if (warns.length) toast(`⚠ ${warns.length} coluna(s) com valores fora do tipo escolhido — veja o topo do SQL`, 'error');
   if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
   else saveTableSchema();
+  if (isXlsx()) saveXlsxCfg();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2181,17 +2197,21 @@ function exportSQL() {
 const TBL_PFX = 'csv2sql_tbl__';
 const tblKey  = n => TBL_PFX + n.toLowerCase().trim();
 
-function saveTableSchema(tbl = document.getElementById('tableIn').value.trim(), colCfg = S.colCfg, headers = S.headers) {
-  if (!tbl || !colCfg.length) return;
-  const data = {
+// Mapeamento de colunas como é salvo (config por tabela e por Excel)
+function cfgSnapshot(colCfg) {
+  return colCfg.map(c => ({
+    csvIndex: c.csvIndex, csvName: c.csvName,
+    dbName: c.dbName, type: c.type,
+    isKey: c.isKey, fixedValue: c.fixedValue || '',
+    fn: c.fn || { type:'none', params:{} }
+  }));
+}
+
+// Schema, operação e opções avançadas como são salvos
+function optsSnapshot() {
+  return {
     schema: document.getElementById('schemaIn').value,
     op: S.op,
-    colCfg: colCfg.map(c => ({
-      csvIndex: c.csvIndex, csvName: c.csvName,
-      dbName: c.dbName, type: c.type,
-      isKey: c.isKey, fixedValue: c.fixedValue || '',
-      fn: c.fn || { type:'none', params:{} }
-    })),
     nc: document.getElementById('optNC').checked,
     tr: document.getElementById('optTR').checked,
     rb: document.getElementById('optRB').checked,
@@ -2200,7 +2220,30 @@ function saveTableSchema(tbl = document.getElementById('tableIn').value.trim(), 
     go: document.getElementById('optGO').checked,
     gn: document.getElementById('optGN').value,
     ea: document.getElementById('optEA').value,
-    dv: document.getElementById('optDV').value,
+    dv: document.getElementById('optDV').value
+  };
+}
+
+function applyOpts(data) {
+  if (data.schema !== undefined) document.getElementById('schemaIn').value = data.schema;
+  if (data.op) setOp(data.op);
+  if (data.nc !== undefined) document.getElementById('optNC').checked = data.nc;
+  if (data.tr !== undefined) document.getElementById('optTR').checked = data.tr;
+  if (data.rb !== undefined) document.getElementById('optRB').checked = data.rb;
+  if (data.mv !== undefined) document.getElementById('optMV').checked = data.mv;
+  if (data.bs !== undefined) document.getElementById('optBS').value = data.bs;
+  if (data.go !== undefined) document.getElementById('optGO').checked = data.go;
+  if (data.gn !== undefined) document.getElementById('optGN').value = data.gn;
+  if (data.ea !== undefined) document.getElementById('optEA').value = data.ea;
+  if (data.dv !== undefined) document.getElementById('optDV').value = data.dv;
+  toggleMVRow(); toggleGORow(); toggleDefaultRow();
+}
+
+function saveTableSchema(tbl = document.getElementById('tableIn').value.trim(), colCfg = S.colCfg, headers = S.headers) {
+  if (!tbl || !colCfg.length) return;
+  const data = {
+    ...optsSnapshot(),
+    colCfg: cfgSnapshot(colCfg),
     savedAt: new Date().toISOString(),
     csvHeaders: headers.slice()
   };
@@ -2266,18 +2309,7 @@ function restoreTableSchema() {
   const data = loadTableSchemaData(tbl);
   if (!data) { toast('Nenhuma config encontrada para essa tabela', 'error'); return; }
 
-  if (data.schema !== undefined) document.getElementById('schemaIn').value = data.schema;
-  if (data.op) setOp(data.op);
-  if (data.nc !== undefined) document.getElementById('optNC').checked = data.nc;
-  if (data.tr !== undefined) document.getElementById('optTR').checked = data.tr;
-  if (data.rb !== undefined) document.getElementById('optRB').checked = data.rb;
-  if (data.mv !== undefined) document.getElementById('optMV').checked = data.mv;
-  if (data.bs !== undefined) document.getElementById('optBS').value = data.bs;
-  if (data.go !== undefined) document.getElementById('optGO').checked = data.go;
-  if (data.gn !== undefined) document.getElementById('optGN').value = data.gn;
-  if (data.ea !== undefined) document.getElementById('optEA').value = data.ea;
-  if (data.dv !== undefined) document.getElementById('optDV').value = data.dv;
-  toggleMVRow(); toggleGORow(); toggleDefaultRow();
+  applyOpts(data);
 
   if (S.headers.length) {
     S.colCfg.forEach(col => {
@@ -2320,6 +2352,7 @@ function updateTblIndicator(tbl) {
 }
 
 function renderTblHistList() {
+  renderXlsxHistList();
   const names = tblNames();
   const list  = document.getElementById('tblHistList');
   if (!list) return;
@@ -2344,6 +2377,124 @@ function renderTblHistList() {
       <button class="btn btn-danger btn-sm" onclick="deleteTableSchema('${esc(n)}')">✕</button>
     </div>`;
   }).join('');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EXCEL CONFIG (auto-save por arquivo: todas as abas de uma vez)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const XLS_PFX = 'csv2sql_xlsx__';
+const xlsKey  = n => XLS_PFX + n.toLowerCase().trim();
+
+function saveXlsxCfg() {
+  if (!isXlsx() || !S.fileName) return;
+  syncActiveSheet();
+  const data = {
+    ...optsSnapshot(),
+    fileName: S.fileName,
+    allSheets: document.getElementById('optAllSheets').checked,
+    active: S.sheets[S.sheetIdx]?.name,
+    sheets: S.sheets.filter(s => s.headers.length).map(s => ({
+      name: s.name, include: s.include, table: s.table, hdrRow: s.hdrRow, selIn: s.selIn,
+      colCfg: cfgSnapshot(s.colCfg), headers: s.headers.slice()
+    })),
+    savedAt: new Date().toISOString()
+  };
+  localStorage.setItem(xlsKey(S.fileName), JSON.stringify(data));
+}
+
+function loadXlsxCfgData(fileName) {
+  try { return JSON.parse(localStorage.getItem(xlsKey(fileName))); }
+  catch { return null; }
+}
+
+function deleteXlsxCfg(key) {
+  const data = (() => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } })();
+  localStorage.removeItem(key);
+  renderTblHistList();
+  if (key === xlsKey(S.fileName || '')) hideXlsxBanner();
+  toast(`Config do Excel "${data?.fileName || key.slice(XLS_PFX.length)}" removida`, 'info');
+}
+
+function xlsxKeys() {
+  const k = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    if (localStorage.key(i).startsWith(XLS_PFX)) k.push(localStorage.key(i));
+  }
+  return k.sort();
+}
+
+function xlsxCfgMeta(data) {
+  const d = new Date(data.savedAt);
+  const fmt = d.toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const inc = data.sheets.filter(s => s.include).length;
+  return `${data.sheets.length} aba(s) · ${inc} marcada(s) · op: ${data.op} · salvo em ${fmt}`;
+}
+
+function checkXlsxRestore() {
+  const data = isXlsx() && loadXlsxCfgData(S.fileName);
+  if (!data || !data.sheets?.length) { hideXlsxBanner(); return; }
+  document.getElementById('xbMeta').textContent = xlsxCfgMeta(data);
+  document.getElementById('xlsxBanner').classList.remove('hidden');
+}
+
+function hideXlsxBanner() {
+  document.getElementById('xlsxBanner').classList.add('hidden');
+}
+
+// Aplica a config salva às abas do arquivo carregado (casando abas pelo nome e colunas pelo cabeçalho)
+function restoreXlsxCfg() {
+  const data = isXlsx() && loadXlsxCfgData(S.fileName);
+  if (!data) { toast('Nenhuma config salva para este Excel', 'error'); return; }
+
+  applyOpts(data);
+  if (data.allSheets !== undefined) document.getElementById('optAllSheets').checked = data.allSheets;
+
+  let matched = 0;
+  data.sheets.forEach(saved => {
+    const sh = S.sheets.find(s => s.name === saved.name);
+    if (!sh) return;
+    matched++;
+    if (saved.hdrRow && saved.hdrRow !== sh.hdrRow) {
+      const old = sh.hdrRow;
+      sh.hdrRow = saved.hdrRow;
+      parseSheet(sh);
+      if (!sh.headers.length) { sh.hdrRow = old; parseSheet(sh); }
+    }
+    sh.colCfg  = makeColCfg(sh.headers, sh.rows, saved.colCfg);
+    sh.table   = saved.table || sh.table;
+    sh.selIn   = saved.selIn || '';
+    sh.include = !!saved.include && sh.headers.length > 0 && sh.rows.length > 0;
+  });
+
+  // sheetIdx = -1: activateSheet não deve gravar o estado antigo da tela por cima da aba restaurada
+  S.sheetIdx = -1;
+  let idx = S.sheets.findIndex(s => s.name === data.active && s.headers.length);
+  if (idx < 0) idx = S.sheets.findIndex(s => s.include);
+  if (idx < 0) idx = S.sheets.findIndex(s => s.headers.length && s.rows.length);
+  activateSheet(idx);
+  hideXlsxBanner();
+  hideRestoreBanner();
+  toast(`Config do Excel restaurada — ${matched}/${S.sheets.length} aba(s) reconhecida(s)`, 'success');
+}
+
+function renderXlsxHistList() {
+  const list = document.getElementById('xlsxHistList');
+  if (!list) return;
+  const items = xlsxKeys().map(k => ({ k, data: (() => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })() }))
+    .filter(x => x.data && x.data.sheets);
+  if (!items.length) {
+    list.innerHTML = '<div class="tbl-empty">Nenhum Excel com config salva ainda.<br><span style="font-size:10px;opacity:.6">Gere o SQL de um Excel para salvar automaticamente.</span></div>';
+    return;
+  }
+  const cur = isXlsx() ? xlsKey(S.fileName) : '';
+  list.innerHTML = items.map(({ k, data }) => `<div class="tbl-item">
+      <div class="tbl-item-info">
+        <div class="tbl-item-name">📗 ${esc(data.fileName || k.slice(XLS_PFX.length))}</div>
+        <div class="tbl-item-meta">${esc(xlsxCfgMeta(data))}</div>
+      </div>
+      ${k === cur ? `<button class="btn btn-ghost btn-sm" onclick="restoreXlsxCfg(); closeProfileModal()">Restaurar</button>` : ''}
+      <button class="btn btn-danger btn-sm" data-k="${esc(k)}" onclick="deleteXlsxCfg(this.dataset.k)">✕</button>
+    </div>`).join('');
 }
 
 function loadTblFromModal(name) {
@@ -2537,6 +2688,7 @@ function resetFile() {
   document.getElementById('prevBadge').textContent = '0 linhas';
   document.getElementById('outBadge').textContent = '0 cmds';
   hideRestoreBanner();
+  hideXlsxBanner();
   updateFnCountBadge();
   switchTab('preview');
 }

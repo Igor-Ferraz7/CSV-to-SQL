@@ -43,10 +43,17 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - Vale só para INSERT (nas demais operações usa o valor inicial fixo, com aviso no topo do SQL)
 
 **ROLLBACK automático em caso de erro** (ligado por padrão)
-- Script inteiro em uma transação, com `TRY/CATCH` em cada lote
-- Antes de inserir, verifica se as tabelas e colunas de destino existem
-- Em erro: `ROLLBACK`, mensagem com número do erro, linha do script, aba/tabela/lote e o texto do SQL Server, e os lotes seguintes não rodam (`SET NOEXEC ON`)
-- O `COMMIT` só acontece se todos os lotes rodaram — um lote que falhou na compilação também cancela a carga
+- `TRY/CATCH` em cada lote; antes de inserir, verifica se as tabelas e colunas de destino existem
+- Transação **uma por aba** (padrão: `COMMIT` a cada aba bem-sucedida; uma aba com erro é desfeita e as seguintes continuam) ou **uma para tudo** (qualquer erro desfaz todas as abas)
+- Em erro: `ROLLBACK` da transação, mensagem com número do erro, linha do script, aba/tabela/lote e o texto do SQL Server; os lotes restantes daquela transação são pulados
+- O `COMMIT` só acontece se todos os lotes da transação rodaram — um lote que falhou na compilação também a desfaz
+- No fim, um resumo: quantas transações foram gravadas e quantas desfeitas
+
+**Campos obrigatórios e linhas ignoradas** (INSERT / MERGE)
+- Marque colunas como **Obrig.** no mapeamento
+- Com "Ignorar linhas com campo obrigatório vazio" (padrão ligado), linhas em que algum campo obrigatório sairia `NULL` não entram no SQL — o sequencial não pula números por causa delas
+- As linhas ignoradas aparecem na aba **🚫 Ignoradas** (linha no arquivo, campos vazios e os dados originais) e podem ser exportadas como planilha `.xlsx`, uma aba por aba de origem
+- Com a opção desligada, as linhas vão para o SQL e um aviso no topo do script informa quantas têm campo obrigatório vazio
 - Requer SQL Server 2012+ e execução no SSMS/sqlcmd (usa `GO`)
 
 **Mapeamento de colunas**

@@ -257,6 +257,11 @@ body.resizing{cursor:col-resize;user-select:none}
 .preview-table tr:nth-child(even) td{background:var(--surface)}
 .preview-table tr:hover td{background:var(--surface2)}
 .preview-note{padding:8px 14px;font-size:11px;color:var(--text-dim);text-align:center}
+.skip-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.skip-sum{font-size:12px;color:var(--text);flex:1;min-width:200px}
+.skip-group{margin-bottom:18px}
+.skip-title{font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:6px;font-family:var(--mono)}
+.preview-table td.miss{background:rgba(255,82,82,.14) !important;outline:1px solid rgba(255,82,82,.45)}
 
 /* ── SQL OUTPUT ── */
 .sql-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:14px;gap:10px}
@@ -588,6 +593,17 @@ body.resizing{cursor:col-resize;user-select:none}
               <input type="checkbox" id="optRB" checked>
               <label class="opt-label" for="optRB">ROLLBACK automático em caso de erro <span style="color:var(--text-dim);font-weight:400">(transação + TRY/CATCH; mostra o erro capturado)</span></label>
             </div>
+            <div class="opt-sub">
+              Transação:
+              <select id="optTX" style="width:auto">
+                <option value="sheet">Uma por aba (COMMIT a cada aba bem-sucedida)</option>
+                <option value="all">Uma para tudo (erro desfaz todas as abas)</option>
+              </select>
+            </div>
+            <div class="opt-row">
+              <input type="checkbox" id="optSK" checked>
+              <label class="opt-label" for="optSK">Ignorar linhas com campo obrigatório vazio <span style="color:var(--text-dim);font-weight:400">(INSERT/MERGE — marque as colunas em "Obrig."; as ignoradas vão para a aba 🚫 Ignoradas)</span></label>
+            </div>
             <div class="opt-row">
               <input type="checkbox" id="optMV" onchange="toggleMVRow()">
               <label class="opt-label" for="optMV">INSERT multi-values <span style="color:var(--text-dim);font-weight:400">(apenas INSERT)</span></label>
@@ -653,6 +669,9 @@ body.resizing{cursor:col-resize;user-select:none}
         <div class="tab" data-tab="output" onclick="switchTab('output')">
           🗄️ SQL Output <span class="tab-badge" id="outBadge">0 cmds</span>
         </div>
+        <div class="tab" data-tab="skipped" onclick="switchTab('skipped')">
+          🚫 Ignoradas <span class="tab-badge" id="skipBadge">0</span>
+        </div>
         <div class="tab-spacer"></div>
         <div class="out-actions">
           <span class="out-stat" id="outStat"></span>
@@ -680,6 +699,17 @@ body.resizing{cursor:col-resize;user-select:none}
             <div class="es-sub">Configure os parâmetros e clique em "Gerar SQL"</div>
           </div>
           <textarea id="sqlOutput" class="hidden" spellcheck="false" readonly></textarea>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tabSkipped">
+        <div class="preview-wrap">
+          <div class="empty-state" id="skipEmpty">
+            <div class="es-icon">🚫</div>
+            <div class="es-title">Nenhuma linha ignorada</div>
+            <div class="es-sub">Marque colunas como "Obrig." e ative "Ignorar linhas com campo obrigatório vazio" nas Opções Avançadas</div>
+          </div>
+          <div id="skipBody" class="hidden"></div>
         </div>
       </div>
     </section>
@@ -988,10 +1018,12 @@ function detectDelim(text) {
 function parseCSV(text, delim) {
   const rows = [];
   const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
-  for (const line of lines) {
-    if (!line.trim()) continue;
+  rows.nums = [];  // nº da linha no arquivo de cada registro (para o relatório de ignorados)
+  lines.forEach((line, i) => {
+    if (!line.trim()) return;
     rows.push(parseLine(line, delim));
-  }
+    rows.nums.push(i + 1);
+  });
   return rows;
 }
 
@@ -1053,6 +1085,7 @@ function processCSV(text, name, size) {
 
   S.headers = all[0];
   S.rows = all.slice(1);
+  S.rowNums = all.nums.slice(1);
   S.source = 'csv'; S.sheets = []; S.sheetIdx = -1;
   S.fileName = name; S.fileSize = size;
   showSheetUI(false);
@@ -1219,6 +1252,7 @@ function parseSheet(sh) {
     return h;
   });
   sh.rows = data.map(r => keep.map(c => r[c]));
+  sh.rowNums = sh.grid.slice(idx + 1).map(r => r.n);
 }
 
 // Nome da aba → identificador SQL sugerido
@@ -1336,6 +1370,7 @@ function makeColCfg(headers, rows, prevCfg) {
       dbName: prev ? prev.dbName : h,
       type: prev ? prev.type : autoType(rows.map(r => r[i] || '')),
       isKey: prev ? prev.isKey : false,
+      req: prev ? !!prev.req : false,
       fixedValue: '',
       fn: prev && prev.fn ? prev.fn : { type:'none', params:{} }
     };
@@ -1358,6 +1393,7 @@ function buildColMap(prevCfg) {
 function renderColMap() {
   const op = S.op;
   const showKey = ['UPDATE','DELETE','SELECT','MERGE'].includes(op);
+  const showReq = REQ_OPS.includes(op);
   document.getElementById('colMapBody').innerHTML = `
     <div class="cmap-actions">
       <button class="btn btn-ghost btn-sm" onclick="setAllTypes('VARCHAR')">Todos VARCHAR</button>
@@ -1372,8 +1408,9 @@ function renderColMap() {
           <th>Coluna DB</th>
           <th style="min-width:96px">Tipo</th>
           ${showKey ? '<th title="Usar no WHERE">WHERE 🔑</th>' : ''}
+          ${showReq ? '<th title="Campo obrigatório: linha com valor vazio/NULL é ignorada (ou apenas avisada)">Obrig.</th>' : ''}
         </tr></thead>
-        <tbody>${S.colCfg.map((c,i) => colRow(c,i,showKey)).join('')}</tbody>
+        <tbody>${S.colCfg.map((c,i) => colRow(c,i,showKey,showReq)).join('')}</tbody>
       </table>
     </div>
     <div class="legend-row">
@@ -1419,7 +1456,7 @@ function removeManualCol(i) {
   updateFnCountBadge();
 }
 
-function colRow(col, i, showKey) {
+function colRow(col, i, showKey, showReq) {
   const TYPES = ['VARCHAR','INT','DECIMAL','DATE','DATETIME','BIT','NULL','LITERAL (sem aspas)','— Ignorar'];
   const VALS  = ['VARCHAR','INT','DECIMAL','DATE','DATETIME','BIT','NULL','LITERAL','SKIP'];
   const skip = col.type === 'SKIP';
@@ -1449,6 +1486,7 @@ function colRow(col, i, showKey) {
       ${TYPES.map((t,j)=>`<option value="${VALS[j]}" ${col.type===VALS[j]?'selected':''}>${t}</option>`).join('')}
     </select></td>
     ${showKey ? `<td class="chk-center"><input type="checkbox" ${col.isKey?'checked':''} onchange="updCol(${i},'isKey',this.checked)" ${skip?'disabled':''}></td>` : ''}
+    ${showReq ? `<td class="chk-center"><input type="checkbox" ${col.req?'checked':''} onchange="updCol(${i},'req',this.checked)" ${skip?'disabled':''} title="Obrigatório"></td>` : ''}
   </tr>`;
 }
 
@@ -1923,40 +1961,46 @@ function buildSQLFor(L, t, table, o) {
   return { cmdCt };
 }
 
-// Monta o script com transação e TRY/CATCH por lote (L = linhas, GO_SEP e marcadores {ctx}).
-// Em erro: ROLLBACK, mensagem explícita (número, linha no script, aba/tabela e texto do SQL Server)
-// e SET NOEXEC ON para os lotes seguintes não rodarem. Um lote que nem executou (erro de
-// compilação, que o TRY não captura) é detectado no fim pela contagem em #csv2sql_lotes.
-function wrapTryCatch(head, L, targets, sch) {
-  const batches = [];
-  let cur, ctx = '';
-  const open = () => { cur = { lines: [], ctx: [] }; batches.push(cur); };
+// Monta o script com TRY/CATCH por lote, em uma ou mais transações (units = [{label, targets}];
+// L = linhas, GO_SEP e marcadores {ctx} e {unit}). Cada transação: verificação de tabelas/colunas,
+// lotes de dados e um lote de COMMIT. Em erro: ROLLBACK só daquela transação, mensagem explícita
+// (número, linha no script, aba/tabela/lote e texto do SQL Server), e os lotes restantes dela são
+// pulados (#csv2sql_falhas); as transações seguintes continuam. Um lote que nem executou (erro de
+// compilação, que o TRY não captura) é detectado no COMMIT pela contagem em #csv2sql_lotes.
+function wrapTryCatch(head, L, units, sch) {
+  const us = units.map(u => ({ ...u, batches: [] }));
+  let u = us[0], cur, ctx = '';
+  const open = () => { cur = { lines: [], ctx: [] }; u.batches.push(cur); };
   open();
   for (const x of L) {
     if (x === GO_SEP) { open(); continue; }
+    if (typeof x === 'object' && x.unit !== undefined) { u = us[x.unit]; open(); continue; }
     if (typeof x === 'object') { ctx = x.ctx; continue; }
     if (x.trim() && !cur.ctx.includes(ctx)) cur.ctx.push(ctx);
     cur.lines.push(x);
   }
-  const data = batches.filter(b => b.ctx.length);
-  const n = data.length;
+  us.forEach(u => { u.batches = u.batches.filter(b => b.ctx.length); });
+  const N = us.length;
 
   // Tabelas e colunas de destino precisam existir: senão o lote falha na compilação
-  const seen = new Set(), checks = [];
-  targets.forEach(t => {
-    const table = sch ? `${sch}.${t.tbl}` : t.tbl;
-    if (!seen.has(table)) {
-      seen.add(table);
-      checks.push(`IF OBJECT_ID(${nstr(table)}) IS NULL RAISERROR(N'Tabela %s não existe', 16, 1, ${nstr(table)});`);
-    }
-    t.colCfg.filter(c => c.type !== 'SKIP').forEach(c => {
-      const col = c.dbName.replace(/^\[(.*)\]$/, '$1').replace(/]]/g, ']');
-      const k = table + '\u0000' + col;
-      if (seen.has(k)) return;
-      seen.add(k);
-      checks.push(`IF COL_LENGTH(${nstr(table)}, ${nstr(col)}) IS NULL RAISERROR(N'Coluna %s não existe na tabela %s', 16, 1, ${nstr(col)}, ${nstr(table)});`);
+  const checksFor = targets => {
+    const seen = new Set(), checks = [];
+    targets.forEach(t => {
+      const table = sch ? `${sch}.${t.tbl}` : t.tbl;
+      if (!seen.has(table)) {
+        seen.add(table);
+        checks.push(`IF OBJECT_ID(${nstr(table)}) IS NULL RAISERROR(N'Tabela %s não existe', 16, 1, ${nstr(table)});`);
+      }
+      t.colCfg.filter(c => c.type !== 'SKIP').forEach(c => {
+        const col = c.dbName.replace(/^\[(.*)\]$/, '$1').replace(/]]/g, ']');
+        const k = table + '\u0000' + col;
+        if (seen.has(k)) return;
+        seen.add(k);
+        checks.push(`IF COL_LENGTH(${nstr(table)}, ${nstr(col)}) IS NULL RAISERROR(N'Coluna %s não existe na tabela %s', 16, 1, ${nstr(col)}, ${nstr(table)});`);
+      });
     });
-  });
+    return checks;
+  };
 
   const out = [];
   let line = 0, batchStart = 0;
@@ -1965,56 +2009,98 @@ function wrapTryCatch(head, L, targets, sch) {
     line += String(s).split('\n').length;
     if (s === 'GO') batchStart = line;
   });
+  const txName = (k, u) => N > 1 ? `transação ${k}/${N} (${u.label})` : 'a transação';
   // ERROR_LINE() conta a partir do início do lote; somando o deslocamento vira a linha do script
-  const block = (ctxText, body) => {
+  const block = (k, u, ctxText, body) => {
     const offset = batchStart;
     push('BEGIN TRY', ...body, 'END TRY', 'BEGIN CATCH',
       '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+      `  IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k}) INSERT INTO #csv2sql_falhas VALUES (${k});`,
       `  DECLARE @csv2sql_err NVARCHAR(2047) = CONCAT(N'Erro ', ERROR_NUMBER(), N' (severidade ', ERROR_SEVERITY(), N', estado ', ERROR_STATE(), N') na linha ', ERROR_LINE() + ${offset}, N' do script — ', ${nstr(ctxText)}, N': ', ERROR_MESSAGE());`,
-      "  PRINT N'❌ CARGA CANCELADA: ROLLBACK executado, nenhuma alteração foi gravada.';",
+      `  PRINT ${nstr(`❌ ERRO: ROLLBACK d${N > 1 ? 'a ' : ''}${txName(k, u)} — nada dela foi gravado.`)};`,
       '  PRINT @csv2sql_err;',
       "  RAISERROR(N'%s', 16, 1, @csv2sql_err);",
-      '  SET NOEXEC ON;  -- impede a execução dos lotes seguintes',
       'END CATCH',
       'GO');
   };
+  const skipIfFailed = k => `IF EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k}) RETURN;  -- transação já desfeita: pula o lote`;
 
   push(...head,
     'SET XACT_ABORT ON;',
     "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;",
-    'CREATE TABLE #csv2sql_lotes (lote INT NOT NULL);',
-    'BEGIN TRAN;',
-    '-- Verifica se as tabelas e colunas de destino existem');
-  block('verificação de tabelas e colunas', checks);
+    "IF OBJECT_ID(N'tempdb..#csv2sql_falhas') IS NOT NULL DROP TABLE #csv2sql_falhas;",
+    'CREATE TABLE #csv2sql_lotes (unidade INT NOT NULL, lote INT NOT NULL);',
+    'CREATE TABLE #csv2sql_falhas (unidade INT NOT NULL);',
+    'GO');
 
-  data.forEach((b, i) => {
-    const ctxText = `${b.ctx.join(' + ')}, lote ${i + 1}/${n}`;
-    push('', `-- ── Lote ${i + 1}/${n} · ${b.ctx.join(' + ').replace(/[\r\n]+/g, ' ')}`);
-    block(ctxText, [
-      "IF @@TRANCOUNT = 0 RAISERROR(N'A transação não está mais ativa: um lote anterior falhou (veja o erro acima) e foi desfeito', 16, 1);",
-      ...b.lines.filter((s, j, a) => s.trim() || (j > 0 && j < a.length - 1)),
-      `INSERT INTO #csv2sql_lotes VALUES (${i + 1});`
-    ]);
+  us.forEach((u, ui) => {
+    const k = ui + 1, n = u.batches.length;
+    push('', `-- ══ ${N > 1 ? `Transação ${k}/${N} · ` : 'Transação · '}${oneLineSql(u.label)}`,
+      'BEGIN TRAN;',
+      '-- Verifica se as tabelas e colunas de destino existem');
+    block(k, u, `${u.label}, verificação de tabelas e colunas`, checksFor(u.targets));
+
+    u.batches.forEach((b, i) => {
+      const ctxText = `${b.ctx.join(' + ')}, lote ${i + 1}/${n}`;
+      push('', `-- ── Lote ${i + 1}/${n} · ${oneLineSql(b.ctx.join(' + '))}`, skipIfFailed(k));
+      block(k, u, ctxText, [
+        "IF @@TRANCOUNT = 0 RAISERROR(N'A transação não está mais ativa: um lote anterior falhou (veja o erro acima) e foi desfeito', 16, 1);",
+        ...b.lines.filter((s, j, a) => s.trim() || (j > 0 && j < a.length - 1)),
+        `INSERT INTO #csv2sql_lotes VALUES (${k}, ${i + 1});`
+      ]);
+    });
+
+    push('',
+      `-- ── COMMIT d${N > 1 ? 'a ' : ''}${oneLineSql(txName(k, u))}: só se todos os lotes rodaram`,
+      `IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k})`,
+      `   AND (SELECT COUNT(*) FROM #csv2sql_lotes WHERE unidade = ${k}) = ${n} AND @@TRANCOUNT > 0`,
+      'BEGIN',
+      '  COMMIT TRAN;',
+      `  PRINT ${nstr(`✅ ${N > 1 ? `${u.label}: ` : ''}COMMIT realizado (${n} lote(s)).`)};`,
+      'END',
+      'ELSE',
+      'BEGIN',
+      '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+      `  IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k})`,
+      '  BEGIN',
+      `    INSERT INTO #csv2sql_falhas VALUES (${k});`,
+      '    DECLARE @csv2sql_lote INT = 1;',
+      `    WHILE EXISTS (SELECT 1 FROM #csv2sql_lotes WHERE unidade = ${k} AND lote = @csv2sql_lote) SET @csv2sql_lote += 1;`,
+      `    RAISERROR(${nstr(`❌ ${N > 1 ? `${u.label}: ` : ''}o lote %d não foi executado (veja o erro acima, ex.: erro de compilação). ROLLBACK executado, nada desta transação foi gravado.`).replace(/%(?!d)/g, '%%')}, 16, 1, @csv2sql_lote);`,
+      '  END',
+      'END',
+      'GO');
   });
 
   push('',
-    '-- ── Finalização: só faz COMMIT se todos os lotes rodaram',
-    `IF (SELECT COUNT(*) FROM #csv2sql_lotes) = ${n} AND @@TRANCOUNT > 0`,
-    'BEGIN',
-    '  COMMIT TRAN;',
-    `  PRINT N'✅ Carga concluída: ${n} lote(s) executado(s), COMMIT realizado.';`,
-    'END',
+    '-- ── Resumo',
+    'DECLARE @csv2sql_f INT = (SELECT COUNT(*) FROM #csv2sql_falhas);',
+    'IF @csv2sql_f = 0',
+    `  PRINT ${nstr(N > 1 ? `✅ Carga concluída: ${N} transação(ões) com COMMIT.` : '✅ Carga concluída: COMMIT realizado.')};`,
     'ELSE',
-    'BEGIN',
-    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
-    '  DECLARE @csv2sql_lote INT = 1;',
-    '  WHILE EXISTS (SELECT 1 FROM #csv2sql_lotes WHERE lote = @csv2sql_lote) SET @csv2sql_lote += 1;',
-    "  RAISERROR(N'❌ CARGA CANCELADA: o lote %d não foi executado (veja o erro acima, ex.: erro de compilação). ROLLBACK executado, nenhuma alteração foi gravada.', 16, 1, @csv2sql_lote);",
-    'END',
-    'GO',
-    'SET NOEXEC OFF;',
-    'GO',
-    "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;");
+    `  RAISERROR(${nstr(N > 1
+      ? `⚠ Carga com falhas: %d de ${N} transação(ões) desfeita(s) com ROLLBACK (veja os erros acima); as demais foram gravadas.`
+      : '❌ CARGA CANCELADA: ROLLBACK executado, nenhuma alteração foi gravada (veja o erro acima).')}, 16, 1${N > 1 ? ', @csv2sql_f' : ''});`,
+    "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;",
+    "IF OBJECT_ID(N'tempdb..#csv2sql_falhas') IS NOT NULL DROP TABLE #csv2sql_falhas;");
+  return out;
+}
+
+const oneLineSql = s => String(s).replace(/[\r\n]+/g, ' ');  // comentário SQL não pode quebrar linha
+
+// Operações em que a marcação "Obrig." vale (as que inserem linhas)
+const REQ_OPS = ['INSERT', 'MERGE'];
+
+// Linhas cujo campo obrigatório sairia NULL no SQL → [{ i, num, missing: [colunas] }]
+function requiredMissing(t) {
+  const req = t.colCfg.filter(c => c.req && c.type !== 'SKIP' && !isSeqMax(c));
+  if (!req.length) return [];
+  const out = [];
+  t.rows.forEach((r, i) => {
+    const cols = req.filter(c => fmtVal(applyFn(c.csvIndex === -1 ? c.fixedValue : r[c.csvIndex], c, i), c.type) === 'NULL');
+    if (cols.length) out.push({ i, num: t.rowNums?.[i] ?? i + 2,
+      missing: cols.map(c => c.dbName), missIdx: cols.map(c => c.csvIndex).filter(x => x >= 0) });
+  });
   return out;
 }
 
@@ -2032,12 +2118,28 @@ function generateSQL() {
     if (!inc.length) { toast('Marque ao menos uma aba para gerar', 'error'); return; }
     const noTbl = inc.find(s => !s.table);
     if (noTbl) { toast(`Informe o nome da tabela da aba "${noTbl.name}"`, 'error'); return; }
-    targets = inc.map(s => ({ label: s.name, tbl: s.table, rows: s.rows, colCfg: s.colCfg, headers: s.headers, selIn: s.selIn }));
+    targets = inc.map(s => ({ label: s.name, tbl: s.table, rows: s.rows, rowNums: s.rowNums, colCfg: s.colCfg, headers: s.headers, selIn: s.selIn }));
   } else {
     const tbl = document.getElementById('tableIn').value.trim();
     if (!tbl) { toast('Informe o nome da tabela', 'error'); return; }
-    targets = [{ label: null, tbl, rows: S.rows, colCfg: S.colCfg, headers: S.headers, selIn: document.getElementById('selInColSel').value }];
+    const rowNums = isXlsx() ? S.sheets[S.sheetIdx]?.rowNums : S.rowNums;
+    targets = [{ label: null, tbl, rows: S.rows, rowNums, colCfg: S.colCfg, headers: S.headers, selIn: document.getElementById('selInColSel').value }];
   }
+
+  // Campos obrigatórios vazios: a linha é ignorada (e listada na aba 🚫 Ignoradas) ou só avisada
+  const skipOn = document.getElementById('optSK').checked;
+  const skipped = [], reqWarns = [];
+  if (REQ_OPS.includes(S.op)) targets = targets.map(t => {
+    const miss = requiredMissing(t);
+    if (!miss.length) return t;
+    if (!skipOn) { reqWarns.push({ t, ...miss[0], count: miss.length }); return t; }
+    skipped.push({ label: t.label, tbl: t.tbl, headers: t.headers,
+      rows: miss.map(m => ({ num: m.num, missing: m.missing, missIdx: m.missIdx, cells: t.rows[m.i] })) });
+    const drop = new Set(miss.map(m => m.i));
+    return { ...t, total: t.rows.length,
+      rows: t.rows.filter((_, i) => !drop.has(i)),
+      rowNums: t.rowNums && t.rowNums.filter((_, i) => !drop.has(i)) };
+  });
 
   const nc = document.getElementById('optNC').checked;
   const tr = document.getElementById('optTR').checked;
@@ -2051,6 +2153,8 @@ function generateSQL() {
 
   const rb = document.getElementById('optRB').checked;
   const inTx = rb || tr;
+  // Uma transação por aba: cada aba vira um bloco com COMMIT próprio
+  const perSheet = rb && multi && targets.length > 1 && document.getElementById('optTX').value === 'sheet';
 
   // Variáveis do sequencial MAX: uma por tabela+coluna. Abas da mesma tabela compartilham a
   // variável e seguem a numeração; após cada GO a variável morre e é redeclarada relendo o MAX
@@ -2085,9 +2189,11 @@ function generateSQL() {
   let cmdCt = 0, rowCt = 0;
   for (const [ti, t] of targets.entries()) {
     const table = sch ? `${sch}.${t.tbl}` : t.tbl;
-    if (ti > 0) { if (multi && o.go) o.goBreak(L); L.push(''); }
+    if (ti > 0) { if ((multi && o.go) || perSheet) o.goBreak(L); L.push(''); }
+    if (perSheet) L.push({ unit: ti });
     L.push({ ctx: multi ? `Aba "${t.label}" → ${table}` : table });
-    if (multi) L.push(`-- ━━ Aba: ${t.label.replace(/[\r\n]+/g, ' ')} → ${table} (${t.rows.length.toLocaleString('pt-BR')} linhas)`);
+    const ign = t.total ? ` · ${(t.total - t.rows.length).toLocaleString('pt-BR')} ignorada(s)` : '';
+    if (multi) L.push(`-- ━━ Aba: ${oneLineSql(t.label)} → ${table} (${t.rows.length.toLocaleString('pt-BR')} linhas${ign})`);
     const res = buildSQLFor(L, t, table, o);
     if (res.error) { toast(multi ? `Aba "${esc(t.label)}": ${res.error}` : res.error, 'error'); return; }
     cmdCt += res.cmdCt;
@@ -2095,14 +2201,23 @@ function generateSQL() {
   }
   const mv = o.mv;
 
-  const oneLine = s => String(s).replace(/[\r\n]+/g, ' ');  // comentário SQL não pode quebrar linha
+  const oneLine = oneLineSql;
+  const where = t => t.label ? `Aba "${t.label}", ` : '';
   const warns = targets.flatMap(t => typeMismatches(t).map(w => oneLine(
-    `-- ⚠ ${t.label ? `Aba "${t.label}", ` : ''}coluna ${w.col} (${w.type}): ${w.count} valor(es) fora do tipo — ex. linha ${w.row}: "${w.value}"`)));
+    `-- ⚠ ${where(t)}coluna ${w.col} (${w.type}): ${w.count} valor(es) fora do tipo — ex. linha ${w.row}: "${w.value}"`)));
   if (S.op !== 'INSERT') targets.forEach(t => t.colCfg.filter(isSeqMax).forEach(c => warns.push(oneLine(
-    `-- ⚠ ${t.label ? `Aba "${t.label}", ` : ''}coluna ${c.dbName}: sequencial "MAX da tabela" só vale para INSERT — usado o valor inicial fixo`))));
+    `-- ⚠ ${where(t)}coluna ${c.dbName}: sequencial "MAX da tabela" só vale para INSERT — usado o valor inicial fixo`))));
+  reqWarns.forEach(w => warns.push(oneLine(
+    `-- ⚠ ${where(w.t)}${w.count} linha(s) com campo obrigatório vazio, que vai(ão) como NULL — ex. linha ${w.num}: ${w.missing.join(', ')}`)));
+  const skipCt = skipped.reduce((n, g) => n + g.rows.length, 0);
+  skipped.forEach(g => warns.push(oneLine(
+    `-- ℹ ${g.label ? `Aba "${g.label}": ` : ''}${g.rows.length} linha(s) ignorada(s) por campo obrigatório vazio — lista na aba 🚫 Ignoradas do gerador`)));
 
+  const units = perSheet
+    ? targets.map(t => ({ label: `Aba "${t.label}" → ${sch ? `${sch}.${t.tbl}` : t.tbl}`, targets: [t] }))
+    : [{ label: multi ? `${targets.length} aba(s)` : (sch ? `${sch}.${targets[0].tbl}` : targets[0].tbl), targets }];
   const head = [...warns, ...(warns.length ? [''] : []), ...(nc ? ['SET NOCOUNT ON;'] : [])];
-  const out = rb ? wrapTryCatch(head, L, targets, sch) : [
+  const out = rb ? wrapTryCatch(head, L, units, sch) : [
     ...head,
     ...(tr ? ['BEGIN TRAN;'] : []),
     ...(nc || tr ? [''] : []),
@@ -2123,15 +2238,20 @@ function generateSQL() {
   const fnCount = targets.reduce((n, t) => n + countActiveFns(t.colCfg), 0);
   const fnSuffix = fnCount > 0 ? ` · ${fnCount} função(ões) aplicada(s)` : '';
   const sheetSuffix = multi ? ` · ${targets.length} aba(s)` : '';
+  const skipSuffix = skipCt ? ` · ${skipCt.toLocaleString('pt-BR')} linha(s) ignorada(s)` : '';
   const stat = mv
-    ? `${cmdCt} INSERT(s) multi-values · ${rowCt.toLocaleString('pt-BR')} registros${sheetSuffix}${fnSuffix}`
-    : `${cmdCt.toLocaleString('pt-BR')} comando(s)${sheetSuffix}${fnSuffix}`;
+    ? `${cmdCt} INSERT(s) multi-values · ${rowCt.toLocaleString('pt-BR')} registros${sheetSuffix}${skipSuffix}${fnSuffix}`
+    : `${cmdCt.toLocaleString('pt-BR')} comando(s)${sheetSuffix}${skipSuffix}${fnSuffix}`;
   document.getElementById('outStat').textContent = stat;
   document.getElementById('outBadge').textContent = cmdCt.toLocaleString('pt-BR') + ' cmds';
+  S.skipped = skipped;
+  renderSkipped();
 
   switchTab('output');
   toast(`${cmdCt.toLocaleString('pt-BR')} comando(s) gerado(s) com sucesso${sheetSuffix}`, 'success');
-  if (warns.length) toast(`⚠ ${warns.length} coluna(s) com valores fora do tipo escolhido — veja o topo do SQL`, 'error');
+  const alerts = warns.length - skipped.length;
+  if (alerts) toast(`⚠ ${alerts} aviso(s) sobre os dados — veja o topo do SQL`, 'error');
+  if (skipCt) toast(`🚫 ${skipCt.toLocaleString('pt-BR')} linha(s) ignorada(s) por campo obrigatório vazio — veja a aba Ignoradas`, 'info');
   if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
   else saveTableSchema();
   if (isXlsx()) saveXlsxCfg();
@@ -2158,12 +2278,71 @@ function renderPreview() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LINHAS IGNORADAS (campo obrigatório vazio)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const SKIP_SHOW = 200;  // linhas exibidas por aba (a exportação leva todas)
+
+function renderSkipped() {
+  const groups = S.skipped || [];
+  const total = groups.reduce((n, g) => n + g.rows.length, 0);
+  document.getElementById('skipBadge').textContent = total.toLocaleString('pt-BR');
+  const body = document.getElementById('skipBody');
+  document.getElementById('skipEmpty').classList.toggle('hidden', total > 0);
+  body.classList.toggle('hidden', !total);
+  if (!total) { body.innerHTML = ''; return; }
+
+  body.innerHTML = `
+    <div class="skip-bar">
+      <div class="skip-sum">🚫 <strong>${total.toLocaleString('pt-BR')}</strong> linha(s) não entraram no SQL por campo obrigatório vazio${groups.length > 1 ? ` · ${groups.length} aba(s)` : ''}</div>
+      <button class="btn btn-success btn-sm" onclick="exportSkipped()">⬇ Exportar planilha (.xlsx)</button>
+    </div>
+    ${groups.map(g => {
+      const idx = g.headers.map((h, i) => i);
+      return `<div class="skip-group">
+        <div class="skip-title">${g.label ? `Aba "${esc(g.label)}" → ` : ''}${esc(g.tbl)} · ${g.rows.length.toLocaleString('pt-BR')} linha(s)</div>
+        <div style="overflow:auto">
+          <table class="preview-table">
+            <thead><tr><th>Linha</th><th>Campos vazios</th>${g.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+            <tbody>${g.rows.slice(0, SKIP_SHOW).map(r => `<tr><td>${r.num}</td><td>${esc(r.missing.join(', '))}</td>${idx.map(i =>
+              `<td class="${r.missIdx.includes(i) ? 'miss' : ''}">${esc(r.cells[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>
+        </div>
+        ${g.rows.length > SKIP_SHOW ? `<div class="preview-note">Mostrando ${SKIP_SHOW} de ${g.rows.length.toLocaleString('pt-BR')} — a planilha exportada traz todas</div>` : ''}
+      </div>`;
+    }).join('')}`;
+}
+
+async function exportSkipped() {
+  const groups = S.skipped || [];
+  if (!groups.length) return;
+  try { await ensureXLSX(); }
+  catch { toast('Não foi possível carregar o gerador de planilha (SheetJS). Verifique a conexão.', 'error'); return; }
+
+  const wb = XLSX.utils.book_new();
+  const used = new Set();
+  groups.forEach(g => {
+    const aoa = [['Linha no arquivo', 'Tabela destino', 'Campos obrigatórios vazios', ...g.headers],
+      ...g.rows.map(r => [r.num, g.tbl, r.missing.join(', '), ...g.headers.map((_, i) => r.cells[i] ?? '')])];
+    // nome de aba no Excel: até 31 caracteres, sem : \ / ? * [ ] e único
+    const base = (g.label || 'Ignoradas').replace(/[:\\/?*\[\]]/g, '_').slice(0, 31) || 'Ignoradas';
+    let name = base, n = 2;
+    while (used.has(name.toLowerCase())) { const suf = ` (${n++})`; name = base.slice(0, 31 - suf.length) + suf; }
+    used.add(name.toLowerCase());
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), name);
+  });
+  const base = (S.sqlName || S.fileName || 'carga').replace(/\.[^.]+$/, '');
+  XLSX.writeFile(wb, `${base}_ignoradas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast('Planilha de linhas ignoradas exportada!', 'success');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TABS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function switchTab(tab) {
   document.querySelectorAll('.tab[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('tabPreview').classList.toggle('active', tab === 'preview');
   document.getElementById('tabOutput').classList.toggle('active', tab === 'output');
+  document.getElementById('tabSkipped').classList.toggle('active', tab === 'skipped');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2202,7 +2381,7 @@ function cfgSnapshot(colCfg) {
   return colCfg.map(c => ({
     csvIndex: c.csvIndex, csvName: c.csvName,
     dbName: c.dbName, type: c.type,
-    isKey: c.isKey, fixedValue: c.fixedValue || '',
+    isKey: c.isKey, req: !!c.req, fixedValue: c.fixedValue || '',
     fn: c.fn || { type:'none', params:{} }
   }));
 }
@@ -2215,6 +2394,8 @@ function optsSnapshot() {
     nc: document.getElementById('optNC').checked,
     tr: document.getElementById('optTR').checked,
     rb: document.getElementById('optRB').checked,
+    tx: document.getElementById('optTX').value,
+    sk: document.getElementById('optSK').checked,
     mv: document.getElementById('optMV').checked,
     bs: document.getElementById('optBS').value,
     go: document.getElementById('optGO').checked,
@@ -2230,6 +2411,8 @@ function applyOpts(data) {
   if (data.nc !== undefined) document.getElementById('optNC').checked = data.nc;
   if (data.tr !== undefined) document.getElementById('optTR').checked = data.tr;
   if (data.rb !== undefined) document.getElementById('optRB').checked = data.rb;
+  if (data.tx !== undefined) document.getElementById('optTX').value = data.tx;
+  if (data.sk !== undefined) document.getElementById('optSK').checked = data.sk;
   if (data.mv !== undefined) document.getElementById('optMV').checked = data.mv;
   if (data.bs !== undefined) document.getElementById('optBS').value = data.bs;
   if (data.go !== undefined) document.getElementById('optGO').checked = data.go;
@@ -2319,6 +2502,7 @@ function restoreTableSchema() {
         col.dbName  = saved.dbName;
         col.type    = saved.type;
         col.isKey   = saved.isKey;
+        col.req     = !!saved.req;
         col.fn      = saved.fn || { type:'none', params:{} };
       }
     });
@@ -2537,43 +2721,16 @@ function getCfg() {
     tableName: document.getElementById('tableIn').value,
     schema: document.getElementById('schemaIn').value,
     delim: document.getElementById('delimSel').value,
-    colCfg: S.colCfg.map(c=>({
-      csvIndex: c.csvIndex,
-      csvName: c.csvName,
-      dbName: c.dbName,
-      type: c.type,
-      isKey: c.isKey,
-      fixedValue: c.fixedValue,
-      fn: c.fn || { type:'none', params:{} }
-    })),
-    nc: document.getElementById('optNC').checked,
-    tr: document.getElementById('optTR').checked,
-    rb: document.getElementById('optRB').checked,
-    mv: document.getElementById('optMV').checked,
-    bs: document.getElementById('optBS').value,
-    go: document.getElementById('optGO').checked,
-    gn: document.getElementById('optGN').value,
-    ea: document.getElementById('optEA').value,
-    dv: document.getElementById('optDV').value,
+    colCfg: cfgSnapshot(S.colCfg),
+    ...optsSnapshot()
   };
 }
 
 function applyCfg(c) {
   if (!c) return;
   if (c.tableName !== undefined) document.getElementById('tableIn').value = c.tableName;
-  if (c.schema    !== undefined) document.getElementById('schemaIn').value = c.schema;
   if (c.delim     !== undefined) document.getElementById('delimSel').value = c.delim;
-  if (c.nc        !== undefined) document.getElementById('optNC').checked = c.nc;
-  if (c.tr        !== undefined) document.getElementById('optTR').checked = c.tr;
-  if (c.rb        !== undefined) document.getElementById('optRB').checked = c.rb;
-  if (c.mv        !== undefined) document.getElementById('optMV').checked = c.mv;
-  if (c.bs        !== undefined) document.getElementById('optBS').value = c.bs;
-  if (c.go        !== undefined) document.getElementById('optGO').checked = c.go;
-  if (c.gn        !== undefined) document.getElementById('optGN').value = c.gn;
-  if (c.ea        !== undefined) document.getElementById('optEA').value = c.ea;
-  if (c.dv        !== undefined) document.getElementById('optDV').value = c.dv;
-  if (c.op) setOp(c.op);
-  toggleMVRow(); toggleGORow(); toggleDefaultRow();
+  applyOpts(c);
 
   if (c.colCfg && S.headers.length) {
     S.colCfg = S.colCfg.filter(x => x.csvIndex !== -1);
@@ -2586,6 +2743,7 @@ function applyCfg(c) {
           f.dbName = saved.dbName;
           f.type   = saved.type;
           f.isKey  = saved.isKey;
+          f.req    = !!saved.req;
           f.fn     = saved.fn || { type:'none', params:{} };
         }
       }
@@ -2673,6 +2831,7 @@ function toggleDefaultRow() { document.getElementById('defRow').style.display = 
 function resetFile() {
   S.rawText = ''; S.headers = []; S.rows = []; S.colCfg = []; S.sql = ''; S.sqlName = '';
   S.source = 'csv'; S.sheets = []; S.sheetIdx = -1; S.fileName = ''; S.fileSize = 0;
+  S.skipped = []; S.rowNums = []; renderSkipped();
   showSheetUI(false);
   document.getElementById('dropZone').classList.remove('hidden');
   document.getElementById('fileLoaded').classList.add('hidden');

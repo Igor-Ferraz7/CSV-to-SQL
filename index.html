@@ -986,14 +986,22 @@ function parseLine(line, delim) {
   res.push(cur.trim()); return res;
 }
 
+// Formatos aceitos por tipo (usados na auto-detecção e no aviso de valores fora do tipo)
+const TYPE_RX = {
+  BIT:      /^(0|1|true|false|sim|não|nao|s|n|yes|no)$/i,
+  INT:      /^-?\d+$/,
+  DECIMAL:  /^-?\d*[.,]?\d+$/,  // inteiros misturados com decimais
+  DATE:     /^\d{2,4}[-/]\d{1,2}[-/]\d{2,4}$/,
+  DATETIME: /^\d{2,4}[-/]\d{1,2}[-/]\d{2,4}[\sT]\d{2}:\d{2}/
+};
+
+// Analisa TODOS os valores: uma amostra deixava passar decimais/textos no fim da coluna
 function autoType(vals) {
-  const s = vals.filter(v => v !== '' && v != null).slice(0, 30);
+  const s = vals.filter(v => v !== '' && v != null);
   if (!s.length) return 'VARCHAR';
-  if (s.every(v => /^(0|1|true|false|sim|não|nao|s|n|yes|no)$/i.test(v))) return 'BIT';
-  if (s.every(v => /^-?\d+$/.test(v))) return 'INT';
-  if (s.every(v => /^-?\d*[.,]?\d+$/.test(v))) return 'DECIMAL';  // inteiros misturados com decimais
-  if (s.every(v => /^\d{2,4}[-/]\d{1,2}[-/]\d{2,4}$/.test(v))) return 'DATE';
-  if (s.every(v => /^\d{2,4}[-/]\d{1,2}[-/]\d{2,4}[\sT]\d{2}:\d{2}/.test(v))) return 'DATETIME';
+  for (const t of ['BIT','INT','DECIMAL','DATE','DATETIME']) {
+    if (s.every(v => TYPE_RX[t].test(v))) return t;
+  }
   return 'VARCHAR';
 }
 
@@ -1003,7 +1011,7 @@ function autoType(vals) {
 const XLSX_EXT = /\.(xlsx|xlsm|xls|ods)$/i;
 
 function loadFile(file) {
-  if (XLSX_EXT.test(file.name)) { loadWorkbook(file); return; }
+  if (XLSX_EXT.test(file.name)) return loadWorkbook(file);
   const reader = new FileReader();
   reader.onload = e => {
     let text = e.target.result;
@@ -1718,6 +1726,29 @@ function fmtVal(raw, type) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SQL GENERATION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Nome de coluna como identificador T-SQL: usa [ ] quando não é um identificador regular
+function qid(name) {
+  if (/^\[.*\]$/.test(name) || /^[\p{L}_][\p{L}\p{N}_@#$]*$/u.test(name)) return name;
+  return `[${name.replace(/]/g, ']]')}]`;
+}
+
+// Colunas cujos valores (após funções) não batem com o tipo escolhido — ex.: "1.5" numa coluna INT
+function typeMismatches(t) {
+  const out = [];
+  t.colCfg.forEach(c => {
+    if (c.csvIndex === -1 || !TYPE_RX[c.type]) return;
+    let count = 0, first = null;
+    t.rows.forEach((r, i) => {
+      const v = applyFn(r[c.csvIndex], c, i);
+      if (v == null || String(v).trim() === '' || TYPE_RX[c.type].test(String(v).trim())) return;
+      count++;
+      if (!first) first = { row: i + 1, value: String(v).slice(0, 40) };
+    });
+    if (count) out.push({ col: c.dbName, type: c.type, count, ...first });
+  });
+  return out;
+}
+
 // Gera os comandos de UMA tabela (CSV ou uma aba do XLSX) e os acrescenta em L.
 // t = { rows, colCfg, selIn }, o = opções globais. Retorna { cmdCt } ou { error }.
 function buildSQLFor(L, t, table, o) {
@@ -1743,7 +1774,7 @@ function buildSQLFor(L, t, table, o) {
 
   const { mv, bs, go, gn } = o;
 
-  const colList = active.map(c => c.dbName).join(', ');
+  const colList = active.map(c => qid(c.dbName)).join(', ');
   let cmdCt = 0;
 
   // ── HELPER: extrai valor bruto e aplica função (se houver) ──
@@ -1796,8 +1827,8 @@ function buildSQLFor(L, t, table, o) {
       if (!seen.has(fv)) { seen.add(fv); inVals.push(fv); }
     }
     if (inVals.length) {
-      const whereParts = [`${selInCol.dbName} IN (${inVals.join(', ')})`];
-      otherKeys.forEach(ok => whereParts.push(`${ok.dbName} = ${fmtVal(getVal(rows[0], ok, 0), ok.type)}`));
+      const whereParts = [`${qid(selInCol.dbName)} IN (${inVals.join(', ')})`];
+      otherKeys.forEach(ok => whereParts.push(`${qid(ok.dbName)} = ${fmtVal(getVal(rows[0], ok, 0), ok.type)}`));
       L.push(`SELECT ${colList} FROM ${table} WHERE ${whereParts.join(' AND ')};`);
       cmdCt = 1;
     } else {
@@ -1808,7 +1839,7 @@ function buildSQLFor(L, t, table, o) {
   } else {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      const kWhere = keys.map(c => `${c.dbName} = ${fmtVal(getVal(r,c,i), c.type)}`).join(' AND ');
+      const kWhere = keys.map(c => `${qid(c.dbName)} = ${fmtVal(getVal(r,c,i), c.type)}`).join(' AND ');
 
       if (S.op === 'INSERT') {
         L.push(`INSERT INTO ${table} (${colList}) VALUES (${active.map(c => fmtVal(getVal(r,c,i), c.type)).join(', ')});`);
@@ -1817,7 +1848,7 @@ function buildSQLFor(L, t, table, o) {
         if (!vals.length) {
           L.push(`-- linha ${i+1}: ignorada (todas as colunas são chave, nada para SET)`);
         } else {
-          L.push(`UPDATE ${table} SET ${vals.map(c => `${c.dbName} = ${fmtVal(getVal(r,c,i), c.type)}`).join(', ')} WHERE ${kWhere};`);
+          L.push(`UPDATE ${table} SET ${vals.map(c => `${qid(c.dbName)} = ${fmtVal(getVal(r,c,i), c.type)}`).join(', ')} WHERE ${kWhere};`);
         }
 
       } else if (S.op === 'DELETE') {
@@ -1827,11 +1858,11 @@ function buildSQLFor(L, t, table, o) {
         L.push(`SELECT ${colList} FROM ${table} WHERE ${kWhere};`);
 
       } else if (S.op === 'MERGE') {
-        const srcCols = active.map(c => `${fmtVal(getVal(r,c,i), c.type)} AS ${c.dbName}`).join(', ');
-        const onClause   = keys.map(c => `target.${c.dbName} = source.${c.dbName}`).join(' AND ');
-        const updSet     = vals.length ? `WHEN MATCHED THEN\n    UPDATE SET ${vals.map(c=>`target.${c.dbName} = source.${c.dbName}`).join(', ')}` : '';
+        const srcCols = active.map(c => `${fmtVal(getVal(r,c,i), c.type)} AS ${qid(c.dbName)}`).join(', ');
+        const onClause   = keys.map(c => `target.${qid(c.dbName)} = source.${qid(c.dbName)}`).join(' AND ');
+        const updSet     = vals.length ? `WHEN MATCHED THEN\n    UPDATE SET ${vals.map(c=>`target.${qid(c.dbName)} = source.${qid(c.dbName)}`).join(', ')}` : '';
         const insCols    = colList;
-        const insSrc     = active.map(c=>`source.${c.dbName}`).join(', ');
+        const insSrc     = active.map(c=>`source.${qid(c.dbName)}`).join(', ');
         L.push(`MERGE INTO ${table} AS target\nUSING (SELECT ${srcCols}) AS source\nON (${onClause})`);
         if (updSet) L.push(updSet);
         L.push(`WHEN NOT MATCHED THEN\n    INSERT (${insCols}) VALUES (${insSrc});`);
@@ -1897,6 +1928,11 @@ function generateSQL() {
 
   if (tr) { L.push(''); L.push('COMMIT;'); L.push('-- ROLLBACK; -- descomente para desfazer'); }
 
+  const oneLine = s => String(s).replace(/[\r\n]+/g, ' ');  // comentário SQL não pode quebrar linha
+  const warns = targets.flatMap(t => typeMismatches(t).map(w => oneLine(
+    `-- ⚠ ${t.label ? `Aba "${t.label}", ` : ''}coluna ${w.col} (${w.type}): ${w.count} valor(es) fora do tipo — ex. linha ${w.row}: "${w.value}"`)));
+  if (warns.length) L.unshift(...warns, '');
+
   S.sql = L.join('\n');
   S.sqlName = multi ? S.fileName.replace(/\.[^.]+$/, '') : targets[0].tbl;
 
@@ -1918,6 +1954,7 @@ function generateSQL() {
 
   switchTab('output');
   toast(`${cmdCt.toLocaleString('pt-BR')} comando(s) gerado(s) com sucesso${sheetSuffix}`, 'success');
+  if (warns.length) toast(`⚠ ${warns.length} coluna(s) com valores fora do tipo escolhido — veja o topo do SQL`, 'error');
   if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
   else saveTableSchema();
 }

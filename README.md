@@ -54,6 +54,14 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - Com "Ignorar linhas com campo obrigatório vazio" (padrão ligado), linhas em que algum campo obrigatório sairia `NULL` não entram no SQL — o sequencial não pula números por causa delas
 - As linhas ignoradas aparecem na aba **🚫 Ignoradas** (linha no arquivo, campos vazios e os dados originais) e podem ser exportadas como planilha `.xlsx`, uma aba por aba de origem
 - Com a opção desligada, as linhas vão para o SQL e um aviso no topo do script informa quantas têm campo obrigatório vazio
+
+**Regras de referência (validação no banco, apenas INSERT)**
+- Botão 🔗 na coluna: tabela e coluna de referência, condição SQL opcional e motivo — ex.: `produto` → `Materiais.Codigo`, ignorar se encontrado com `Inativo = 'S'` ("Material inativo"), ou ignorar se **não** encontrado (código inexistente)
+- Validado na hora da carga: cada bloco vai uma vez para uma tabela temporária, as linhas barradas são registradas e as demais entram num único `INSERT … SELECT` — uma busca na tabela de referência por bloco, não por linha (use índice na coluna de referência)
+- O sequencial MAX é numerado depois do filtro (`ROW_NUMBER()`), sem buracos
+- Linha barrada não é erro: a transação segue e faz `COMMIT`. No fim do script, um `SELECT` lista as barradas (Aba, Tabela, Linha, Motivo, Coluna, Valor)
+- Copie esse resultado no SSMS e use **📥 Importar do banco** na aba 🚫 Ignoradas: as linhas são casadas com o arquivo carregado e entram na mesma planilha exportada
+- Se uma transação sofrer ROLLBACK por outro erro, as linhas que ela barrou também saem da lista (a aba inteira precisa ser recarregada de qualquer forma)
 - Requer SQL Server 2012+ e execução no SSMS/sqlcmd (usa `GO`)
 
 **Mapeamento de colunas**

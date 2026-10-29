@@ -191,6 +191,10 @@ body.resizing{cursor:col-resize;user-select:none}
 }
 .fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
 .ref-btn{font-style:normal;font-size:10px}
+.ref-explain{font-size:12px;line-height:1.55;margin-bottom:8px}
+.ref-explain .rx-no{color:var(--red,#ff6b6b)}
+.ref-explain .rx-ok{color:var(--green,#3ddc84)}
+.ref-explain code{font-family:var(--mono);font-size:11px;background:var(--surface2);padding:1px 4px;border-radius:3px}
 .ref-btn.dead{background:var(--orange-dim);border-color:var(--orange);box-shadow:none}
 .rep-row{display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px}
 .fn-section .rep-row input{width:auto;flex-shrink:0;margin-top:2px}
@@ -835,7 +839,8 @@ body.resizing{cursor:col-resize;user-select:none}
       <div class="fn-section-label">Ignorar a linha quando o registro de referência…</div>
       <select id="refMode" onchange="updateRefPreview()">
         <option value="exists">for encontrado com a condição abaixo (ex.: material inativo)</option>
-        <option value="missing">não for encontrado com a condição abaixo (ex.: código inexistente)</option>
+        <option value="missingOr">não for encontrado, OU for encontrado com a condição abaixo (ex.: inexistente ou inativo)</option>
+        <option value="missing">não for encontrado com a condição abaixo (a condição descreve o registro VÁLIDO)</option>
       </select>
     </div>
     <div class="fn-section">
@@ -849,6 +854,8 @@ body.resizing{cursor:col-resize;user-select:none}
 
     <div class="fn-section">
       <div class="fn-section-label">Teste gerado para cada lote</div>
+      <div class="ref-explain" id="refExplain"></div>
+      <div id="refWarn"></div>
       <div class="fn-preview"><div class="fn-preview-body" id="refPreview" style="padding:10px;font-family:var(--mono);font-size:11px;white-space:pre-wrap"></div></div>
     </div>
     <div class="fn-hint"><span>💡</span><span>O lote vai uma vez para uma tabela temporária; as linhas barradas são registradas e as demais entram num único INSERT … SELECT. Com índice em <em>Coluna da referência</em>, o custo é uma busca por lote.</span></div>
@@ -1590,8 +1597,9 @@ function colRow(col, i, showKey, showReq) {
       <div class="db-col-cell">
         <input type="text" value="${esc(col.dbName)}" onchange="updCol(${i},'dbName',this.value)" ${skip?'disabled':''}>
         <button type="button" class="fn-btn ${hasFn?'active':''}" onclick="openFnModal(${i})" title="${fnTitle}" ${skip?'disabled':''}>ƒ</button>
-        ${S.op === 'INSERT' ? `<button type="button" class="fn-btn ref-btn ${col.ref?'active':''} ${hasDeadRefRule(col)?'dead':''}" onclick="openRefModal(${i})" title="${hasDeadRefRule(col)
+        ${S.op === 'INSERT' ? `<button type="button" class="fn-btn ref-btn ${col.ref?'active':''} ${hasDeadRefRule(col) || (col.ref && refLooksInverted(col.ref)) ? 'dead' : ''}" onclick="openRefModal(${i})" title="${hasDeadRefRule(col)
           ? `Regra "${esc(col.ref.motivo || col.ref.table)}" NÃO é aplicada: esta coluna é sequencial (MAX), gerada pelo banco — clique para remover`
+          : col.ref && refLooksInverted(col.ref) ? `Regra "${esc(col.ref.motivo || col.ref.table)}" parece invertida (deixa entrar só quem atende a condição) — clique para revisar`
           : col.ref ? `Regra: ${esc(col.ref.motivo || col.ref.table)} — clique para editar` : 'Regra de referência (validar no banco)'}" ${skip?'disabled':''}>🔗</button>` : ''}
       </div>
     </td>
@@ -1945,11 +1953,38 @@ function hasDeadRefRule(c) {
 }
 
 // Teste SQL que é verdadeiro quando a linha deve ser ignorada pela regra (val = expressão do valor)
+// Modos: 'exists' = ignora se achar com a condição; 'missing' = ignora se não achar com a condição;
+// 'missingOr' = ignora se não achar, ou se achar com a condição (= não existe registro SEM a condição).
+// Em 'missingOr' a condição é negada com CASE para tratar NULL como "não atende" (ex.: Inativo NULL = ativo).
 function refTest(c, val) {
   const r = c.ref;
-  const where = [`r.${qid(r.col.trim())} = ${val}`, ...(r.cond && r.cond.trim() ? [`(${oneLineSql(r.cond.trim())})`] : [])].join(' AND ');
-  const ex = `EXISTS (SELECT 1 FROM ${r.table.trim()} r WHERE ${where})`;
-  return r.mode === 'missing' ? `${val} IS NOT NULL AND NOT ${ex}` : ex;
+  const cond = r.cond && r.cond.trim() ? oneLineSql(r.cond.trim()) : '';
+  const key = `r.${qid(r.col.trim())} = ${val}`;
+  const ex = w => `EXISTS (SELECT 1 FROM ${r.table.trim()} r WHERE ${w})`;
+  if (r.mode === 'missingOr')
+    return `${val} IS NOT NULL AND NOT ${ex(cond ? `${key} AND (CASE WHEN (${cond}) THEN 1 ELSE 0 END) = 0` : key)}`;
+  const w = cond ? `${key} AND (${cond})` : key;
+  return r.mode === 'missing' ? `${val} IS NOT NULL AND NOT ${ex(w)}` : ex(w);
+}
+
+// A regra em português: o que é ignorado e o que entra
+function refExplainHTML(r) {
+  const t = `<code>${esc(r.table)}</code>`, cond = r.cond ? `<code>${esc(r.cond)}</code>` : '';
+  const no = s => `<div class="rx-no">❌ Ignora: ${s}</div>`, ok = s => `<div class="rx-ok">✅ Entra: ${s}</div>`;
+  if (r.mode === 'missingOr') return cond
+    ? no(`código que não existe em ${t}, ou que existe com ${cond}`) + ok(`código que existe em ${t} sem ${cond}`)
+    : no(`código que não existe em ${t}`) + ok(`código que existe em ${t}`);
+  if (r.mode === 'missing') return cond
+    ? no(`código que não existe em ${t} com ${cond}`) + ok(`somente código que existe em ${t} <strong>com</strong> ${cond}`)
+    : no(`código que não existe em ${t}`) + ok(`código que existe em ${t}`);
+  return cond
+    ? no(`código que existe em ${t} com ${cond}`) + ok(`código que não existe em ${t}, ou que existe sem ${cond}`)
+    : no(`código que existe em ${t}`) + ok(`código que não existe em ${t}`);
+}
+
+// "não for encontrado" + condição que descreve o estado RUIM (ex.: Inativo = 'S') deixa entrar só os ruins
+function refLooksInverted(r) {
+  return r.mode === 'missing' && !!r.cond && /\b(inativ|bloque|cancel|exclu|desativ|suspens)/i.test(r.cond);
 }
 
 // Separador de lote: objeto (e não a string 'GO') para não confundir com dados
@@ -2389,6 +2424,9 @@ function generateSQL() {
     : [{ label: multi ? `${targets.length} aba(s)` : (sch ? `${sch}.${targets[0].tbl}` : targets[0].tbl), targets }];
   if (S.op !== 'INSERT') targets.forEach(t => t.colCfg.filter(hasRefRule).forEach(c => warns.push(oneLine(
     `-- ⚠ ${where(t)}coluna ${c.dbName}: regra de referência só vale para INSERT — não aplicada`))));
+  const invRefs = S.op === 'INSERT' ? targets.flatMap(t => t.colCfg.filter(c => hasRefRule(c) && refLooksInverted(c.ref)).map(c => ({ t, c }))) : [];
+  invRefs.forEach(({ t, c }) => warns.push(oneLine(
+    `-- ⚠ ${where(t)}coluna ${c.dbName}: regra "${c.ref.motivo || c.ref.table}" parece invertida — modo "não for encontrado" com a condição ${c.ref.cond} só deixa entrar quem ATENDE a condição; revise no 🔗 (modo "não for encontrado, OU for encontrado com a condição")`)));
   const deadRefs = S.op === 'INSERT' ? targets.flatMap(t => t.colCfg.filter(hasDeadRefRule).map(c => ({ t, c }))) : [];
   deadRefs.forEach(({ t, c }) => warns.push(oneLine(
     `-- ⚠ ${where(t)}coluna ${c.dbName}: regra de referência "${c.ref.motivo || c.ref.table}" NÃO aplicada — a coluna é sequencial MAX (gerada pelo banco); aplique a regra na coluna que traz o valor do arquivo`)));
@@ -2448,6 +2486,7 @@ function generateSQL() {
   const alerts = warns.length - skipped.length;
   if (alerts) toast(`⚠ ${alerts} aviso(s) sobre os dados — veja o topo do SQL`, 'error');
   if (skipCt) toast(`🚫 ${skipCt.toLocaleString('pt-BR')} linha(s) ignorada(s) por campo obrigatório vazio — veja a aba Ignoradas`, 'info');
+  if (invRefs.length) toast(`⚠ Regra de referência possivelmente invertida em: ${[...new Set(invRefs.map(d => d.c.dbName))].join(', ')} — revise no 🔗 (botão laranja)`, 'error');
   if (deadRefs.length) toast(`⚠ Regra de referência em coluna sequencial não foi aplicada: ${[...new Set(deadRefs.map(d => d.c.dbName))].join(', ')} — mova a regra para a coluna do valor (ex.: produto)`, 'error');
   if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
   else saveTableSchema();
@@ -2625,8 +2664,14 @@ function updateRefPreview() {
   const c = S.colCfg[refEditingIdx];
   if (!c) return;
   const r = readRefFromUI();
-  document.getElementById('refPreview').textContent = r.table && r.col
-    ? `ignora a linha se:\n${refTest({ ref: r }, `[${c.dbName}]`)}`
+  const ready = r.table && r.col;
+  document.getElementById('refExplain').innerHTML = ready ? refExplainHTML(r) : '';
+  document.getElementById('refWarn').innerHTML = ready && (refLooksInverted(r) || (r.mode === 'missing' && r.cond))
+    ? `<div class="fn-warn"><span>⚠</span><span>${refLooksInverted(r) ? '<strong>Esta regra parece invertida:</strong> ' : ''}neste modo a condição descreve o registro <strong>válido</strong> — só entra o código que existe <strong>com</strong> ela. Para barrar o código inexistente <strong>e também</strong> os que atendem a condição (ex.: inativo), use o modo "não for encontrado, OU for encontrado com a condição".
+        <button class="btn btn-ghost btn-xs" style="margin-left:6px" onclick="document.getElementById('refMode').value='missingOr';updateRefPreview()">Usar esse modo</button></span></div>`
+    : '';
+  document.getElementById('refPreview').textContent = ready
+    ? `SQL — ignora a linha se:\n${refTest({ ref: r }, `[${c.dbName}]`)}`
     : 'Informe a tabela e a coluna de referência.';
 }
 
@@ -2636,7 +2681,8 @@ function applyRefAndClose() {
   const r = readRefFromUI();
   if (!r.table || !r.col) { toast('Informe a tabela e a coluna de referência', 'error'); return; }
   if (isSeqMax(c)) { toast(`"${c.dbName}" é um sequencial MAX (gerado pelo banco) — aplique a regra na coluna que traz o valor do arquivo, ex.: produto`, 'error'); return; }
-  if (!r.motivo) r.motivo = r.mode === 'missing' ? `${c.dbName} não encontrado em ${r.table}` : `${c.dbName} barrado por ${r.table}`;
+  if (!r.motivo) r.motivo = r.mode === 'missing' ? `${c.dbName} não encontrado em ${r.table}`
+    : r.mode === 'missingOr' ? `${c.dbName} inexistente ou barrado em ${r.table}` : `${c.dbName} barrado por ${r.table}`;
   c.ref = r;
   closeRefModal();
   renderColMap();

@@ -57,6 +57,7 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 
 **Regras de referência (validação no banco, apenas INSERT)**
 - Botão 🔗 na coluna: tabela e coluna de referência, condição SQL opcional e motivo — ex.: `produto` → `Materiais.Codigo`, ignorar se encontrado com `Inativo = 'S'` ("Material inativo"), ou ignorar se **não** encontrado (código inexistente)
+- Excel com várias abas: ao aplicar a regra, o gerador procura o mesmo campo nas outras abas que vão para a mesma tabela (sem diferenciar maiúsculas) e pergunta se quer replicar a regra nelas — dá para escolher as abas; abas com outra regra são avisadas antes de substituir
 - Validado na hora da carga: cada bloco vai uma vez para uma tabela temporária, as linhas barradas são registradas e as demais entram num único `INSERT … SELECT` — uma busca na tabela de referência por bloco, não por linha (use índice na coluna de referência)
 - O sequencial MAX é numerado depois do filtro (`ROW_NUMBER()`), sem buracos
 - Linha barrada não é erro: a transação segue e faz `COMMIT`. No fim do script, um `SELECT` lista as barradas (Aba, Tabela, Linha, Motivo, Coluna, Valor)

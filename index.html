@@ -191,6 +191,10 @@ body.resizing{cursor:col-resize;user-select:none}
 }
 .fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
 .ref-btn{font-style:normal;font-size:10px}
+.rep-row{display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px}
+.fn-section .rep-row input{width:auto;flex-shrink:0;margin-top:2px}
+.rep-row .rep-name{font-weight:600;color:var(--text)}
+.rep-row .rep-note{color:var(--text-dim);font-size:11px}
 .fn-btn.active{
   background:var(--purple);border-color:var(--purple);color:#000;
   box-shadow:0 0 8px var(--purple-dim);
@@ -851,6 +855,30 @@ body.resizing{cursor:col-resize;user-select:none}
     <div class="fn-modal-actions">
       <button class="btn btn-danger" onclick="clearRefAndClose()">🗑 Remover regra</button>
       <button class="btn btn-purple" onclick="applyRefAndClose()">✓ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<!-- MODAL: Replicar regra de referência em outras abas   -->
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="modal-ov" id="refRepModal" onclick="if(event.target===this)closeRefReplicate()">
+  <div class="modal">
+    <div class="fn-modal-head">
+      <div class="fn-icon">🔗</div>
+      <div class="fn-title">
+        <h3>Replicar a regra nas outras abas?</h3>
+        <div class="fn-sub" id="refRepSub"></div>
+      </div>
+      <span class="modal-x" onclick="closeRefReplicate()">×</span>
+    </div>
+    <div class="fn-section">
+      <div class="fn-section-label">Abas com o mesmo campo indo para a mesma tabela</div>
+      <div class="fn-params" id="refRepList"></div>
+    </div>
+    <div class="fn-modal-actions">
+      <button class="btn btn-ghost" onclick="closeRefReplicate()">Só nesta aba</button>
+      <button class="btn btn-purple" onclick="applyRefReplicate()">✓ Replicar nas marcadas</button>
     </div>
   </div>
 </div>
@@ -2599,6 +2627,52 @@ function applyRefAndClose() {
   closeRefModal();
   renderColMap();
   toast(`Regra de referência aplicada a "${c.dbName}"`, 'success');
+  offerRefReplicate(c);
+}
+
+// ── Replicar a regra: outras abas que vão para a mesma tabela e têm o mesmo campo sem esta regra
+let refReplica = null;
+
+function refReplicaTargets(c) {
+  if (!isXlsx()) return [];
+  syncActiveSheet();
+  const norm = s => String(s || '').trim().toLowerCase();
+  const tbl = norm(S.sheets[S.sheetIdx]?.table);
+  if (!tbl) return [];
+  const rule = JSON.stringify(c.ref);
+  return S.sheets
+    .map((s, i) => ({ s, i, col: (s.colCfg || []).find(x => norm(x.dbName) === norm(c.dbName) && x.type !== 'SKIP') }))
+    .filter(x => x.i !== S.sheetIdx && x.col && norm(x.s.table) === tbl && JSON.stringify(x.col.ref || null) !== rule);
+}
+
+function offerRefReplicate(c) {
+  const targets = refReplicaTargets(c);
+  if (!targets.length) return;
+  refReplica = { ref: c.ref, dbName: c.dbName, targets };
+  document.getElementById('refRepSub').innerHTML =
+    `Detectei o campo <strong style="color:var(--purple);font-family:var(--mono)">${esc(c.dbName)}</strong> em ${targets.length} outra(s) aba(s) que vão para <strong style="font-family:var(--mono)">${esc(S.sheets[S.sheetIdx].table)}</strong>. Aplicar a mesma regra (${esc(c.ref.motivo)}) nelas?`;
+  document.getElementById('refRepList').innerHTML = targets.map(({ s, i, col }) => `
+    <label class="rep-row">
+      <input type="checkbox" data-i="${i}" checked>
+      <span><span class="rep-name">${esc(s.name)}</span>${s.include ? '' : ' <span class="sheet-tag">não marcada</span>'}
+        <span class="rep-note"> — ${col.ref ? `já tem outra regra: ${esc(col.ref.motivo || col.ref.table)} (será substituída)` : 'sem regra'}</span>
+      </span>
+    </label>`).join('');
+  document.getElementById('refRepModal').classList.add('open');
+}
+
+function closeRefReplicate() {
+  document.getElementById('refRepModal').classList.remove('open');
+  refReplica = null;
+}
+
+function applyRefReplicate() {
+  if (!refReplica) return;
+  const picked = [...document.querySelectorAll('#refRepList input[data-i]:checked')].map(el => +el.dataset.i);
+  const { ref, dbName, targets } = refReplica;
+  targets.filter(t => picked.includes(t.i)).forEach(t => { t.col.ref = { ...ref }; });
+  closeRefReplicate();
+  if (picked.length) toast(`Regra de "${dbName}" replicada em ${picked.length} aba(s): ${picked.map(i => S.sheets[i].name).join(', ')}`, 'success');
 }
 
 function clearRefAndClose() {

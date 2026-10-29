@@ -191,6 +191,7 @@ body.resizing{cursor:col-resize;user-select:none}
 }
 .fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
 .ref-btn{font-style:normal;font-size:10px}
+.ref-btn.dead{background:var(--orange-dim);border-color:var(--orange);box-shadow:none}
 .rep-row{display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px}
 .fn-section .rep-row input{width:auto;flex-shrink:0;margin-top:2px}
 .rep-row .rep-name{font-weight:600;color:var(--text)}
@@ -1589,7 +1590,9 @@ function colRow(col, i, showKey, showReq) {
       <div class="db-col-cell">
         <input type="text" value="${esc(col.dbName)}" onchange="updCol(${i},'dbName',this.value)" ${skip?'disabled':''}>
         <button type="button" class="fn-btn ${hasFn?'active':''}" onclick="openFnModal(${i})" title="${fnTitle}" ${skip?'disabled':''}>ƒ</button>
-        ${S.op === 'INSERT' ? `<button type="button" class="fn-btn ref-btn ${col.ref?'active':''}" onclick="openRefModal(${i})" title="${col.ref ? `Regra: ${esc(col.ref.motivo || col.ref.table)} — clique para editar` : 'Regra de referência (validar no banco)'}" ${skip?'disabled':''}>🔗</button>` : ''}
+        ${S.op === 'INSERT' ? `<button type="button" class="fn-btn ref-btn ${col.ref?'active':''} ${hasDeadRefRule(col)?'dead':''}" onclick="openRefModal(${i})" title="${hasDeadRefRule(col)
+          ? `Regra "${esc(col.ref.motivo || col.ref.table)}" NÃO é aplicada: esta coluna é sequencial (MAX), gerada pelo banco — clique para remover`
+          : col.ref ? `Regra: ${esc(col.ref.motivo || col.ref.table)} — clique para editar` : 'Regra de referência (validar no banco)'}" ${skip?'disabled':''}>🔗</button>` : ''}
       </div>
     </td>
     <td><select onchange="updCol(${i},'type',this.value)">
@@ -1931,8 +1934,14 @@ function isSeqMax(c) {
 }
 
 // Regra de referência da coluna (validada no banco): { table, col, mode: 'exists'|'missing', cond, motivo }
+// Coluna sequencial MAX não pode ter regra: o valor é gerado no banco, não vem do arquivo.
 function hasRefRule(c) {
-  return c.type !== 'SKIP' && !!(c.ref && c.ref.table && c.ref.col);
+  return c.type !== 'SKIP' && !isSeqMax(c) && !!(c.ref && c.ref.table && c.ref.col);
+}
+
+// Regra presa numa coluna sequencial MAX (ex.: aplicada antes de a coluna virar sequencial)
+function hasDeadRefRule(c) {
+  return c.type !== 'SKIP' && isSeqMax(c) && !!(c.ref && c.ref.table && c.ref.col);
 }
 
 // Teste SQL que é verdadeiro quando a linha deve ser ignorada pela regra (val = expressão do valor)
@@ -2380,6 +2389,9 @@ function generateSQL() {
     : [{ label: multi ? `${targets.length} aba(s)` : (sch ? `${sch}.${targets[0].tbl}` : targets[0].tbl), targets }];
   if (S.op !== 'INSERT') targets.forEach(t => t.colCfg.filter(hasRefRule).forEach(c => warns.push(oneLine(
     `-- ⚠ ${where(t)}coluna ${c.dbName}: regra de referência só vale para INSERT — não aplicada`))));
+  const deadRefs = S.op === 'INSERT' ? targets.flatMap(t => t.colCfg.filter(hasDeadRefRule).map(c => ({ t, c }))) : [];
+  deadRefs.forEach(({ t, c }) => warns.push(oneLine(
+    `-- ⚠ ${where(t)}coluna ${c.dbName}: regra de referência "${c.ref.motivo || c.ref.table}" NÃO aplicada — a coluna é sequencial MAX (gerada pelo banco); aplique a regra na coluna que traz o valor do arquivo`)));
 
   // Regras de referência: as linhas barradas no banco são listadas no fim (para importar no gerador)
   const hasRef = S.op === 'INSERT' && targets.some(t => t.colCfg.some(hasRefRule));
@@ -2436,6 +2448,7 @@ function generateSQL() {
   const alerts = warns.length - skipped.length;
   if (alerts) toast(`⚠ ${alerts} aviso(s) sobre os dados — veja o topo do SQL`, 'error');
   if (skipCt) toast(`🚫 ${skipCt.toLocaleString('pt-BR')} linha(s) ignorada(s) por campo obrigatório vazio — veja a aba Ignoradas`, 'info');
+  if (deadRefs.length) toast(`⚠ Regra de referência em coluna sequencial não foi aplicada: ${[...new Set(deadRefs.map(d => d.c.dbName))].join(', ')} — mova a regra para a coluna do valor (ex.: produto)`, 'error');
   if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
   else saveTableSchema();
   if (isXlsx()) saveXlsxCfg();
@@ -2622,6 +2635,7 @@ function applyRefAndClose() {
   if (!c) return;
   const r = readRefFromUI();
   if (!r.table || !r.col) { toast('Informe a tabela e a coluna de referência', 'error'); return; }
+  if (isSeqMax(c)) { toast(`"${c.dbName}" é um sequencial MAX (gerado pelo banco) — aplique a regra na coluna que traz o valor do arquivo, ex.: produto`, 'error'); return; }
   if (!r.motivo) r.motivo = r.mode === 'missing' ? `${c.dbName} não encontrado em ${r.table}` : `${c.dbName} barrado por ${r.table}`;
   c.ref = r;
   closeRefModal();
@@ -2641,7 +2655,7 @@ function refReplicaTargets(c) {
   if (!tbl) return [];
   const rule = JSON.stringify(c.ref);
   return S.sheets
-    .map((s, i) => ({ s, i, col: (s.colCfg || []).find(x => norm(x.dbName) === norm(c.dbName) && x.type !== 'SKIP') }))
+    .map((s, i) => ({ s, i, col: (s.colCfg || []).find(x => norm(x.dbName) === norm(c.dbName) && x.type !== 'SKIP' && !isSeqMax(x)) }))
     .filter(x => x.i !== S.sheetIdx && x.col && norm(x.s.table) === tbl && JSON.stringify(x.col.ref || null) !== rule);
 }
 

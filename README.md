@@ -56,7 +56,11 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - Com a opção desligada, as linhas vão para o SQL e um aviso no topo do script informa quantas têm campo obrigatório vazio
 
 **Regras de referência (validação no banco, apenas INSERT)**
-- Botão 🔗 na coluna: tabela e coluna de referência, condição SQL opcional e motivo — ex.: `produto` → `Materiais.Codigo`, ignorar se encontrado com `Inativo = 'S'` ("Material inativo"), ou ignorar se **não** encontrado (código inexistente)
+- Botão 🔗 na coluna: tabela e coluna de referência, condição SQL opcional e motivo — ex.: `produto` → `Materiais.Codigo` com a condição `Inativo = 'S'`. Três modos de "ignorar a linha quando o registro…":
+  - **for encontrado com a condição** — barra só o inativo
+  - **não for encontrado, OU for encontrado com a condição** — barra o inexistente **e** o inativo (NULL na condição conta como "não atende", ex.: `Inativo` NULL = ativo)
+  - **não for encontrado com a condição** — aqui a condição descreve o registro **válido** (ex.: `Ativo = 'S'`)
+- O modal explica em português o que é ignorado e o que entra, e avisa quando a regra parece invertida (ex.: "não for encontrado" + `Inativo = 'S'`, que deixaria entrar só os inativos) — com botão para trocar para o modo certo; regras salvas assim ficam com o 🔗 laranja e geram aviso no topo do SQL
 - Excel com várias abas: ao aplicar a regra, o gerador procura o mesmo campo nas outras abas que vão para a mesma tabela (sem diferenciar maiúsculas) e pergunta se quer replicar a regra nelas — dá para escolher as abas; abas com outra regra são avisadas antes de substituir
 - Validado na hora da carga: cada bloco vai uma vez para uma tabela temporária, as linhas barradas são registradas e as demais entram num único `INSERT … SELECT` — uma busca na tabela de referência por bloco, não por linha (use índice na coluna de referência)
 - O sequencial MAX é numerado depois do filtro (`ROW_NUMBER()`), sem buracos

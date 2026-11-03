@@ -191,6 +191,7 @@ body.resizing{cursor:col-resize;user-select:none}
 }
 .fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
 .ref-btn{font-style:normal;font-size:10px}
+.rf-warn{color:var(--orange);background:var(--orange-dim);border:1px solid rgba(255,112,67,.3);border-radius:var(--r);padding:7px 9px;font-size:11px;line-height:1.45}
 .ref-explain{font-size:12px;line-height:1.55;margin-bottom:8px}
 .ref-explain .rx-no{color:var(--red,#ff6b6b)}
 .ref-explain .rx-ok{color:var(--green,#3ddc84)}
@@ -609,6 +610,16 @@ body.resizing{cursor:col-resize;user-select:none}
                 <option value="sheet">Uma por aba (COMMIT a cada aba bem-sucedida)</option>
                 <option value="all">Uma para tudo (erro desfaz todas as abas)</option>
               </select>
+            </div>
+            <div class="opt-sub">
+              Linha recusada pelo banco (INSERT):
+              <select id="optRF" style="width:auto" onchange="toggleRFWarn()">
+                <option value="undo">Desfazer a aba / transação inteira (recomendado)</option>
+                <option value="skip">Pular a linha e continuar — só para TESTAR a carga</option>
+              </select>
+            </div>
+            <div class="opt-sub rf-warn" id="rfWarn" style="display:none">
+              ⚠ Modo teste: cada linha roda na própria transação; as recusadas pelo banco (ex.: saldo negativo) são puladas e listadas, e o restante é gravado. A carga pode ficar <strong>parcial</strong> — use numa base de teste para descobrir todas as recusadas e rode a carga real com "Desfazer".
             </div>
             <div class="opt-row">
               <input type="checkbox" id="optSK" checked>
@@ -2040,8 +2051,11 @@ function buildSQLFor(L, t, table, o) {
   //    INSERT … SELECT (uma busca na tabela de referência por bloco, não por linha). O nome da
   //    temporária é único (#csv2sql_loteN): o SQL Server não compila dois SELECT INTO da mesma
   //    #tabela num mesmo lote.
+  //    Modo "pular recusadas" (o.skipRefused): mesma tabela temporária, mas as linhas barradas pelas
+  //    regras são apagadas dela e cada linha restante é inserida num loop, na PRÓPRIA transação; a
+  //    que o banco recusar (ex.: trigger de saldo) é registrada com a mensagem e o loop segue.
   const refCols = S.op === 'INSERT' ? active.filter(hasRefRule) : [];
-  if (refCols.length) {
+  if (refCols.length || o.skipRefused) {
     const staged = active.filter(c => !isSeqMax(c));
     const alias = c => `[c${staged.indexOf(c)}]`;
     const lineNo = i => t.rowNums?.[i] ?? i + 2;
@@ -2056,18 +2070,42 @@ function buildSQLFor(L, t, table, o) {
       refCols.forEach(c => L.push(
         `INSERT INTO #csv2sql_ignoradas (aba, tabela, linha, motivo, coluna, valor) SELECT ${nstr(t.label || '')}, ${nstr(table)}, s.csv2sql_linha, ${nstr(c.ref.motivo || 'Regra de referência')}, ${nstr(c.dbName)}, CONVERT(NVARCHAR(4000), s.${alias(c)}) FROM ${st} s WHERE ${refTest(c, `s.${alias(c)}`)};`));
       const seqCols = active.filter(isSeqMax).map(c => [c, o.seqVar(L, table, c)]);
-      const sel = active.map(c => {
-        const sq = seqCols.find(([x]) => x === c)?.[1];
-        return sq ? `${sq.name} + ROW_NUMBER() OVER (ORDER BY s.csv2sql_linha) * ${sq.step}` : `s.${alias(c)}`;
-      });
-      L.push(`INSERT INTO ${table} (${colList})`);
-      L.push(`SELECT ${sel.join(', ')} FROM ${st} s`);
-      L.push(`WHERE ${refCols.map(c => `NOT (${refTest(c, `s.${alias(c)}`)})`).join(' AND ')};`);
       // o sequencial avança só pelo que entrou de fato
-      if (seqCols.length) {
-        L.push(`SELECT ${seqCols.map(([, sq]) => `${sq.name} = ${sq.name} + @@ROWCOUNT * ${sq.step}`).join(', ')};`);
-        seqCols.forEach(([, sq]) => { sq.k = 0; });
+      const seqAdvance = seqCols.length
+        ? `SELECT ${seqCols.map(([, sq]) => `${sq.name} = ${sq.name} + @@ROWCOUNT * ${sq.step}`).join(', ')};` : '';
+      if (!o.skipRefused) {
+        const sel = active.map(c => {
+          const sq = seqCols.find(([x]) => x === c)?.[1];
+          return sq ? `${sq.name} + ROW_NUMBER() OVER (ORDER BY s.csv2sql_linha) * ${sq.step}` : `s.${alias(c)}`;
+        });
+        L.push(`INSERT INTO ${table} (${colList})`);
+        L.push(`SELECT ${sel.join(', ')} FROM ${st} s`);
+        L.push(`WHERE ${refCols.map(c => `NOT (${refTest(c, `s.${alias(c)}`)})`).join(' AND ')};`);
+        if (seqAdvance) L.push(seqAdvance);
+      } else {
+        refCols.forEach(c => L.push(`DELETE s FROM ${st} s WHERE ${refTest(c, `s.${alias(c)}`)};`));
+        const sel = active.map(c => {
+          const sq = seqCols.find(([x]) => x === c)?.[1];
+          return sq ? `${sq.name} + ${sq.step}` : `s.${alias(c)}`;
+        });
+        const iv = `@csv2sql_i${o.stageN}`;
+        L.push(`DECLARE ${iv} INT = (SELECT MIN(csv2sql_linha) FROM ${st});`);
+        L.push(`WHILE ${iv} IS NOT NULL`);
+        L.push('BEGIN');
+        L.push('  BEGIN TRY');
+        L.push('    BEGIN TRAN;');
+        L.push(`    INSERT INTO ${table} (${colList}) SELECT ${sel.join(', ')} FROM ${st} s WHERE s.csv2sql_linha = ${iv};`);
+        if (seqAdvance) L.push('    ' + seqAdvance);
+        L.push('    COMMIT TRAN;');
+        L.push('  END TRY');
+        L.push('  BEGIN CATCH');
+        L.push('    IF @@TRANCOUNT > 0 ROLLBACK TRAN;');
+        L.push(`    INSERT INTO #csv2sql_ignoradas (aba, tabela, linha, motivo, coluna, valor) VALUES (${nstr(t.label || '')}, ${nstr(table)}, ${iv}, LEFT(CONCAT(N'Recusada pelo banco: ', RTRIM(ERROR_MESSAGE())), 2000), N'', N'');`);
+        L.push('  END CATCH');
+        L.push(`  SET ${iv} = (SELECT MIN(csv2sql_linha) FROM ${st} WHERE csv2sql_linha > ${iv});`);
+        L.push('END');
       }
+      if (seqCols.length) seqCols.forEach(([, sq]) => { sq.k = 0; });
       L.push(`DROP TABLE ${st};`);
       cmdCt++;
       if (go && i0 + chunkSize < rows.length) o.goBreak(L);
@@ -2172,7 +2210,9 @@ function buildSQLFor(L, t, table, o) {
 // (número, linha no script, aba/tabela/lote e texto do SQL Server), e os lotes restantes dela são
 // pulados (#csv2sql_falhas); as transações seguintes continuam. Um lote que nem executou (erro de
 // compilação, que o TRY não captura) é detectado no COMMIT pela contagem em #csv2sql_lotes.
-function wrapTryCatch(head, L, units, sch, tail = []) {
+// noTx (modo "pular recusadas"): sem transação da aba — cada linha tem a sua (buildSQLFor); o lote
+// de COMMIT vira um resumo das recusadas e um erro fora do loop não desfaz o que já foi gravado.
+function wrapTryCatch(head, L, units, sch, tail = [], noTx = false) {
   const us = units.map(u => ({ ...u, batches: [] }));
   let u = us[0], cur, ctx = '';
   const open = () => { cur = { lines: [], ctx: [] }; u.batches.push(cur); };
@@ -2222,7 +2262,9 @@ function wrapTryCatch(head, L, units, sch, tail = []) {
       '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
       `  IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k}) INSERT INTO #csv2sql_falhas VALUES (${k});`,
       `  DECLARE @csv2sql_err NVARCHAR(2047) = CONCAT(N'Erro ', ERROR_NUMBER(), N' (severidade ', ERROR_SEVERITY(), N', estado ', ERROR_STATE(), N') na linha ', ERROR_LINE() + ${offset}, N' do script — ', ${nstr(ctxText)}, N': ', ERROR_MESSAGE());`,
-      `  PRINT ${nstr(`❌ ERRO: ROLLBACK d${N > 1 ? 'a ' : ''}${txName(k, u)} — nada dela foi gravado.`)};`,
+      `  PRINT ${nstr(noTx
+        ? `❌ ERRO em ${u.label} — o restante desta aba não foi processado; as linhas já gravadas permanecem (modo pular).`
+        : `❌ ERRO: ROLLBACK d${N > 1 ? 'a ' : ''}${txName(k, u)} — nada dela foi gravado.`)};`,
       '  PRINT @csv2sql_err;',
       "  RAISERROR(N'%s', 16, 1, @csv2sql_err);",
       'END CATCH',
@@ -2240,8 +2282,10 @@ function wrapTryCatch(head, L, units, sch, tail = []) {
 
   us.forEach((u, ui) => {
     const k = ui + 1, n = u.batches.length;
-    push('', `-- ══ ${N > 1 ? `Transação ${k}/${N} · ` : 'Transação · '}${oneLineSql(u.label)}`,
-      'BEGIN TRAN;',
+    push('', noTx
+        ? `-- ══ ${N > 1 ? `Aba ${k}/${N} · ` : ''}${oneLineSql(u.label)} · MODO TESTE: cada linha na própria transação`
+        : `-- ══ ${N > 1 ? `Transação ${k}/${N} · ` : 'Transação · '}${oneLineSql(u.label)}`,
+      ...(noTx ? [] : ['BEGIN TRAN;']),
       '-- Verifica se as tabelas e colunas de destino existem');
     block(k, u, `${u.label}, verificação de tabelas e colunas`, checksFor(u.targets));
 
@@ -2249,11 +2293,27 @@ function wrapTryCatch(head, L, units, sch, tail = []) {
       const ctxText = `${b.ctx.join(' + ')}, lote ${i + 1}/${n}`;
       push('', `-- ── Lote ${i + 1}/${n} · ${oneLineSql(b.ctx.join(' + '))}`, skipIfFailed(k));
       block(k, u, ctxText, [
-        "IF @@TRANCOUNT = 0 RAISERROR(N'A transação não está mais ativa: um lote anterior falhou (veja o erro acima) e foi desfeito', 16, 1);",
+        ...(noTx ? [] : ["IF @@TRANCOUNT = 0 RAISERROR(N'A transação não está mais ativa: um lote anterior falhou (veja o erro acima) e foi desfeito', 16, 1);"]),
         ...b.lines.filter((s, j, a) => s.trim() || (j > 0 && j < a.length - 1)),
         `INSERT INTO #csv2sql_lotes VALUES (${k}, ${i + 1});`
       ]);
     });
+
+    if (noTx) {
+      const abas = u.targets.map(t => nstr(t.label || '')).join(', ');
+      push('',
+        `-- ── Resumo d${N > 1 ? 'a ' : ''}${oneLineSql(u.label)}`,
+        `DECLARE @csv2sql_r INT = (SELECT COUNT(*) FROM #csv2sql_ignoradas WHERE aba IN (${abas}) AND motivo LIKE N'Recusada pelo banco%');`,
+        `IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k}) AND (SELECT COUNT(*) FROM #csv2sql_lotes WHERE unidade = ${k}) = ${n}`,
+        `  PRINT CONCAT(${nstr(`✅ ${u.label}: processada — `)}, @csv2sql_r, N' linha(s) recusada(s) pelo banco e pulada(s).');`,
+        `ELSE IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k})`,
+        'BEGIN',
+        `  INSERT INTO #csv2sql_falhas VALUES (${k});`,
+        `  RAISERROR(${nstr(`❌ ${u.label}: um lote não foi executado (veja o erro acima, ex.: erro de compilação); as linhas já gravadas permanecem.`)}, 16, 1);`,
+        'END',
+        'GO');
+      return;
+    }
 
     push('',
       `-- ── COMMIT d${N > 1 ? 'a ' : ''}${oneLineSql(txName(k, u))}: só se todos os lotes rodaram`,
@@ -2280,12 +2340,20 @@ function wrapTryCatch(head, L, units, sch, tail = []) {
   push('',
     '-- ── Resumo',
     'DECLARE @csv2sql_f INT = (SELECT COUNT(*) FROM #csv2sql_falhas);',
-    'IF @csv2sql_f = 0',
-    `  PRINT ${nstr(N > 1 ? `✅ Carga concluída: ${N} transação(ões) com COMMIT.` : '✅ Carga concluída: COMMIT realizado.')};`,
-    'ELSE',
-    `  RAISERROR(${nstr(N > 1
-      ? `⚠ Carga com falhas: %d de ${N} transação(ões) desfeita(s) com ROLLBACK (veja os erros acima); as demais foram gravadas.`
-      : '❌ CARGA CANCELADA: ROLLBACK executado, nenhuma alteração foi gravada (veja o erro acima).')}, 16, 1${N > 1 ? ', @csv2sql_f' : ''});`,
+    ...(noTx ? [
+      "DECLARE @csv2sql_rec INT = (SELECT COUNT(*) FROM #csv2sql_ignoradas WHERE motivo LIKE N'Recusada pelo banco%');",
+      "IF @csv2sql_f = 0 AND @csv2sql_rec = 0",
+      "  PRINT N'✅ MODO TESTE: nenhuma linha recusada pelo banco — a carga pode ser rodada no modo \"Desfazer\".';",
+      'ELSE',
+      "  RAISERROR(N'⚠ MODO TESTE (pular linhas recusadas): %d linha(s) recusada(s) pelo banco foram puladas e %d aba(s) tiveram erro. A carga pode estar PARCIAL — veja a lista abaixo.', 16, 1, @csv2sql_rec, @csv2sql_f);"
+    ] : [
+      'IF @csv2sql_f = 0',
+      `  PRINT ${nstr(N > 1 ? `✅ Carga concluída: ${N} transação(ões) com COMMIT.` : '✅ Carga concluída: COMMIT realizado.')};`,
+      'ELSE',
+      `  RAISERROR(${nstr(N > 1
+        ? `⚠ Carga com falhas: %d de ${N} transação(ões) desfeita(s) com ROLLBACK (veja os erros acima); as demais foram gravadas.`
+        : '❌ CARGA CANCELADA: ROLLBACK executado, nenhuma alteração foi gravada (veja o erro acima).')}, 16, 1${N > 1 ? ', @csv2sql_f' : ''});`
+    ]),
     "IF OBJECT_ID(N'tempdb..#csv2sql_lotes') IS NOT NULL DROP TABLE #csv2sql_lotes;",
     "IF OBJECT_ID(N'tempdb..#csv2sql_falhas') IS NOT NULL DROP TABLE #csv2sql_falhas;",
     ...tail);
@@ -2358,9 +2426,14 @@ function generateSQL() {
   };
 
   const rb = document.getElementById('optRB').checked;
-  const inTx = rb || tr;
-  // Uma transação por aba: cada aba vira um bloco com COMMIT próprio
-  const perSheet = rb && multi && targets.length > 1 && document.getElementById('optTX').value === 'sheet';
+  // Linha recusada pelo banco: "undo" desfaz a aba/transação (padrão); "skip" pula a linha e segue
+  // (cada linha na própria transação) — só para TESTAR a carga, pois o resultado pode ficar parcial
+  const skipRef = S.op === 'INSERT' && document.getElementById('optRF').value === 'skip';
+  o.skipRefused = skipRef;
+  const inTx = (rb || tr) && !skipRef;
+  // Uma transação por aba: cada aba vira um bloco com COMMIT próprio (no modo pular, um bloco por aba
+  // só para o resumo)
+  const perSheet = rb && multi && targets.length > 1 && (document.getElementById('optTX').value === 'sheet' || skipRef);
 
   // Variáveis do sequencial MAX: uma por tabela+coluna. Abas da mesma tabela compartilham a
   // variável e seguem a numeração; após cada GO a variável morre e é redeclarada relendo o MAX
@@ -2431,31 +2504,42 @@ function generateSQL() {
   deadRefs.forEach(({ t, c }) => warns.push(oneLine(
     `-- ⚠ ${where(t)}coluna ${c.dbName}: regra de referência "${c.ref.motivo || c.ref.table}" NÃO aplicada — a coluna é sequencial MAX (gerada pelo banco); aplique a regra na coluna que traz o valor do arquivo`)));
 
-  // Regras de referência: as linhas barradas no banco são listadas no fim (para importar no gerador)
+  if (skipRef) {
+    warns.unshift(
+      '-- ⚠⚠ MODO TESTE: linhas recusadas pelo banco são PULADAS e a carga segue (cada linha na própria transação).',
+      '--     O resultado pode ficar PARCIAL. Use só para testar a carga e listar todas as recusadas;',
+      '--     para a carga real, escolha "Desfazer a aba" em Opções Avançadas.');
+    if (!rb && tr) warns.push('-- ⚠ BEGIN TRAN / COMMIT ignorado: no modo pular cada linha tem a própria transação');
+  }
+
+  // Regras de referência / modo pular: as linhas barradas ou recusadas no banco são listadas no fim
+  // (para importar no gerador)
   const hasRef = S.op === 'INSERT' && targets.some(t => t.colCfg.some(hasRefRule));
-  const refHead = hasRef ? [
+  const hasLog = hasRef || skipRef;
+  const refHead = hasLog ? [
     "IF OBJECT_ID(N'tempdb..#csv2sql_ignoradas') IS NOT NULL DROP TABLE #csv2sql_ignoradas;",
-    'CREATE TABLE #csv2sql_ignoradas (id INT IDENTITY PRIMARY KEY, aba NVARCHAR(128), tabela NVARCHAR(300), linha INT, motivo NVARCHAR(400), coluna NVARCHAR(128), valor NVARCHAR(4000));'
+    'CREATE TABLE #csv2sql_ignoradas (id INT IDENTITY PRIMARY KEY, aba NVARCHAR(128), tabela NVARCHAR(300), linha INT, motivo NVARCHAR(2000), coluna NVARCHAR(128), valor NVARCHAR(4000));'
   ] : [];
-  const refTail = hasRef ? ['',
-    '-- ── Linhas ignoradas pelas regras de referência (copie o resultado com cabeçalhos e use',
-    '--    "📥 Importar do banco" na aba 🚫 Ignoradas do gerador)',
+  const refTail = hasLog ? ['',
+    '-- ── Linhas ignoradas pelas regras de referência / recusadas pelo banco (copie o resultado com',
+    '--    cabeçalhos e use "📥 Importar do banco" na aba 🚫 Ignoradas do gerador)',
     'IF EXISTS (SELECT 1 FROM #csv2sql_ignoradas)',
     'BEGIN',
     '  DECLARE @csv2sql_ign INT = (SELECT COUNT(*) FROM #csv2sql_ignoradas);',
-    "  PRINT CONCAT(N'🚫 ', @csv2sql_ign, N' linha(s) ignorada(s) pelas regras de referência — veja o resultado.');",
+    "  PRINT CONCAT(N'🚫 ', @csv2sql_ign, N' linha(s) ignorada(s) ou recusada(s) — veja o resultado.');",
     '  SELECT aba AS Aba, tabela AS Tabela, linha AS Linha, motivo AS Motivo, coluna AS Coluna, valor AS Valor FROM #csv2sql_ignoradas ORDER BY id;',
     'END',
     'DROP TABLE #csv2sql_ignoradas;'
   ] : [];
 
   const head = [...warns, ...(warns.length ? [''] : []), ...(nc ? ['SET NOCOUNT ON;'] : []), ...refHead];
-  const out = rb ? wrapTryCatch(head, L, units, sch, refTail) : [
+  const outerTr = tr && !skipRef;
+  const out = rb ? wrapTryCatch(head, L, units, sch, refTail, skipRef) : [
     ...head,
-    ...(tr ? ['BEGIN TRAN;'] : []),
-    ...(nc || tr || hasRef ? [''] : []),
+    ...(outerTr ? ['BEGIN TRAN;'] : []),
+    ...(nc || outerTr || hasLog ? [''] : []),
     ...L.filter(x => typeof x === 'string' || x === GO_SEP).map(x => x === GO_SEP ? 'GO' : x),
-    ...(tr ? ['', 'COMMIT;', '-- ROLLBACK; -- descomente para desfazer'] : []),
+    ...(outerTr ? ['', 'COMMIT;', '-- ROLLBACK; -- descomente para desfazer'] : []),
     ...refTail
   ];
 
@@ -2486,6 +2570,7 @@ function generateSQL() {
   const alerts = warns.length - skipped.length;
   if (alerts) toast(`⚠ ${alerts} aviso(s) sobre os dados — veja o topo do SQL`, 'error');
   if (skipCt) toast(`🚫 ${skipCt.toLocaleString('pt-BR')} linha(s) ignorada(s) por campo obrigatório vazio — veja a aba Ignoradas`, 'info');
+  if (skipRef) toast('⚠ MODO TESTE: linhas recusadas pelo banco serão puladas e a carga pode ficar PARCIAL — use só para testar', 'error');
   if (invRefs.length) toast(`⚠ Regra de referência possivelmente invertida em: ${[...new Set(invRefs.map(d => d.c.dbName))].join(', ')} — revise no 🔗 (botão laranja)`, 'error');
   if (deadRefs.length) toast(`⚠ Regra de referência em coluna sequencial não foi aplicada: ${[...new Set(deadRefs.map(d => d.c.dbName))].join(', ')} — mova a regra para a coluna do valor (ex.: produto)`, 'error');
   if (multi) targets.forEach(t => saveTableSchema(t.tbl, t.colCfg, t.headers));
@@ -2590,8 +2675,9 @@ function importDbIgnored() {
   let added = 0, unmatched = 0;
   lines.forEach(l => {
     const p = l.split('\t').map(x => x.trim());
-    if (p.length < 6) return;
-    const [aba, tabela, linha, motivo, coluna, valor] = p;
+    if (p.length < 4) return;
+    // recusadas pelo banco vêm sem coluna/valor (o SSMS pode copiar como vazio ou "NULL")
+    const [aba, tabela, linha, motivo, coluna, valor] = p.concat(['', '']).map(x => x === 'NULL' ? '' : x);
     const num = parseInt(linha);
     if (!Number.isInteger(num)) return;  // cabeçalho ou lixo
 
@@ -2604,7 +2690,7 @@ function importDbIgnored() {
 
     let g = S.skipped.find(x => x.label === label && x.tbl === tbl);
     if (!g) { g = { label, tbl, headers: src.headers, rows: [] }; S.skipped.push(g); }
-    const text = `${motivo}: ${coluna} = ${valor}`;
+    const text = coluna ? `${motivo}: ${coluna} = ${valor}` : motivo;
     const ci = src.colCfg.find(c => c.dbName === coluna)?.csvIndex;
     const ex = g.rows.find(r => r.num === num);
     if (ex) {
@@ -2805,6 +2891,7 @@ function optsSnapshot() {
     rb: document.getElementById('optRB').checked,
     tx: document.getElementById('optTX').value,
     sk: document.getElementById('optSK').checked,
+    rf: document.getElementById('optRF').value,
     mv: document.getElementById('optMV').checked,
     bs: document.getElementById('optBS').value,
     go: document.getElementById('optGO').checked,
@@ -2822,6 +2909,8 @@ function applyOpts(data) {
   if (data.rb !== undefined) document.getElementById('optRB').checked = data.rb;
   if (data.tx !== undefined) document.getElementById('optTX').value = data.tx;
   if (data.sk !== undefined) document.getElementById('optSK').checked = data.sk;
+  if (data.rf !== undefined) document.getElementById('optRF').value = data.rf;
+  toggleRFWarn();
   if (data.mv !== undefined) document.getElementById('optMV').checked = data.mv;
   if (data.bs !== undefined) document.getElementById('optBS').value = data.bs;
   if (data.go !== undefined) document.getElementById('optGO').checked = data.go;
@@ -3235,6 +3324,7 @@ function toggleAdv() {
 function toggleMVRow()      { document.getElementById('mvRow').style.display  = document.getElementById('optMV').checked ? 'flex' : 'none'; }
 function toggleGORow()      { document.getElementById('goRow').style.display  = document.getElementById('optGO').checked ? 'flex' : 'none'; }
 function toggleDefaultRow() { document.getElementById('defRow').style.display = document.getElementById('optEA').value === 'default' ? 'flex' : 'none'; }
+function toggleRFWarn()     { document.getElementById('rfWarn').style.display = document.getElementById('optRF').value === 'skip' ? 'block' : 'none'; }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // RESET

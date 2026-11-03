@@ -48,6 +48,10 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 - Em erro: `ROLLBACK` da transação, mensagem com número do erro, linha do script, aba/tabela/lote e o texto do SQL Server; os lotes restantes daquela transação são pulados
 - O `COMMIT` só acontece se todos os lotes da transação rodaram — um lote que falhou na compilação também a desfaz
 - No fim, um resumo: quantas transações foram gravadas e quantas desfeitas
+- **Linha recusada pelo banco** (INSERT), em Opções Avançadas:
+  - **Desfazer a aba / transação inteira** (padrão, recomendado para a carga real): a primeira linha recusada (ex.: trigger de saldo negativo) desfaz a aba
+  - **Pular a linha e continuar — só para TESTAR a carga**: cada linha roda na própria transação; as recusadas são puladas e **todas** listadas com a mensagem do banco, e o restante é gravado (o sequencial não pula números). A carga pode ficar **parcial**: use numa base de teste para descobrir todas as recusadas, corrija a origem e rode a carga real com "Desfazer". O script e o gerador avisam em destaque quando este modo está ativo
+  - As recusadas saem no mesmo resultado final das ignoradas e podem ser importadas na aba 🚫 Ignoradas
 
 **Campos obrigatórios e linhas ignoradas** (INSERT / MERGE)
 - Marque colunas como **Obrig.** no mapeamento

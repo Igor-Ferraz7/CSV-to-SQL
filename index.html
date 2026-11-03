@@ -5,449 +5,378 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CSV → SQL Generator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#07090f;--surface:#0d1420;--surface2:#121c2d;--surface3:#182438;
-  --border:#1c2e45;--border-hi:#264060;
-  --cyan:#00c8ff;--cyan-dim:rgba(0,200,255,.12);--cyan-glow:rgba(0,200,255,.25);
-  --green:#00e676;--green-dim:rgba(0,230,118,.1);
-  --orange:#ff7043;--orange-dim:rgba(255,112,67,.12);
-  --red:#ff4d6d;--red-dim:rgba(255,77,109,.1);
-  --yellow:#ffd740;
-  --purple:#b388ff;--purple-dim:rgba(179,136,255,.12);
-  --text:#b8cfe0;--text-hi:#ddf0ff;--text-dim:#526a82;
-  --font:'IBM Plex Sans',system-ui,sans-serif;
-  --mono:'IBM Plex Mono','Courier New',monospace;
-  --r:6px;--r2:10px;--t:.14s ease;
+  --bg:#0E1116;--surface:#12161C;--surface2:#151A21;--surface3:#1B222B;
+  --border:#262E39;--border-hi:#2C3541;
+  --cyan:#4C8DFF;--cyan-hi:#7AABFF;--cyan-dim:rgba(76,141,255,.14);--cyan-glow:rgba(76,141,255,.28);
+  --green:#56D364;--green-dim:rgba(63,185,80,.13);
+  --orange:#E3B341;--orange-dim:rgba(210,153,34,.13);
+  --red:#FF7B72;--red-dim:rgba(248,81,73,.13);
+  --yellow:#E3B341;
+  --purple:#B392F0;--purple-dim:rgba(179,146,240,.14);
+  --text:#D6DCE4;--text-hi:#F0F3F6;--text-dim:#8B96A5;
+  --font:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'Courier New',monospace;
+  --r:8px;--r2:12px;--t:.14s ease;
 }
-html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;overflow:hidden}
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:var(--surface)}
-::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:#3a5a7a}
+html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;overflow:hidden}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:#3B4656}
 
 /* ── LAYOUT ── */
-.app{display:grid;grid-template-rows:48px 1fr;height:100vh}
-.main{display:grid;grid-template-columns:var(--left-w,370px) 1fr;overflow:hidden}
+.app{display:grid;grid-template-rows:auto auto 1fr;height:100vh}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) var(--side-w,380px);overflow:hidden;min-height:0}
+.ws-main{display:flex;flex-direction:column;gap:16px;padding:22px 28px 0;overflow:hidden;min-width:0}
+.ws-side{position:relative;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:22px 22px 28px 24px;display:flex;flex-direction:column;gap:16px}
+.side-resizer{position:absolute;top:0;left:-3px;width:6px;height:100%;cursor:col-resize;z-index:5;transition:background var(--t)}
+.side-resizer:hover,.side-resizer.dragging{background:var(--cyan-glow)}
+body.resizing{cursor:col-resize;user-select:none}
 
 /* ── HEADER ── */
-.header{
-  background:var(--surface);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;padding:0 16px;gap:12px;
-}
-.logo{display:flex;align-items:center;gap:9px;flex-shrink:0}
-.logo-mark{
-  width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(135deg,var(--cyan),#0066aa);
-  box-shadow:0 0 18px var(--cyan-glow);font-size:15px;
-}
-.logo-text{font-size:15px;font-weight:700;color:var(--text-hi);letter-spacing:-.5px}
-.logo-text em{color:var(--cyan);font-style:normal}
-.hbar{width:1px;height:22px;background:var(--border)}
-.profile-bar{display:flex;align-items:center;gap:8px;flex:1}
-.plabel{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim)}
+.header{background:var(--surface);display:flex;align-items:center;gap:18px;padding:12px 28px;flex-wrap:wrap;min-height:64px}
+.logo{display:flex;align-items:center;gap:11px;flex-shrink:0}
+.logo-text{font-size:16px;font-weight:700;color:var(--text-hi);letter-spacing:-.2px}
+.logo-text em{color:var(--cyan-hi);font-style:normal}
+.hbar{width:1px;height:26px;background:var(--border)}
+.profile-bar{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
+.plabel{font-size:12px;color:var(--text-dim)}
+.file-pill{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 160px;max-width:360px}
+.file-pill .fl-info{display:flex;flex-direction:column;min-width:0}
+.fl-name{font-family:var(--mono);font-size:13.5px;color:var(--text-hi);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl-meta{font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl-empty{font-size:13px;color:var(--text-dim)}
+#fileLoaded:not(.hidden) + #fileNone{display:none}
 
 /* ── INPUTS & SELECTS ── */
 input[type=text],input[type=number],select,textarea{
-  background:var(--surface2);border:1px solid var(--border);color:var(--text);
-  font-family:var(--font);font-size:12px;border-radius:var(--r);
-  padding:5px 9px;outline:none;transition:border-color var(--t);
+  background:var(--bg);border:1px solid var(--border-hi);color:var(--text-hi);
+  font-family:var(--font);font-size:13.5px;border-radius:var(--r);
+  padding:8px 11px;outline:none;transition:border-color var(--t),box-shadow var(--t);
 }
-input[type=text]:focus,input[type=number]:focus,select:focus{border-color:#2e6090}
+input[type=text]:focus,input[type=number]:focus,select:focus,textarea:focus{border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-dim)}
 select{cursor:pointer}
-input[type=checkbox]{width:14px;height:14px;accent-color:var(--orange);cursor:pointer}
+input[type=checkbox],input[type=radio]{width:16px;height:16px;accent-color:var(--cyan);cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan-hi);outline-offset:2px}
 
 /* ── BUTTONS ── */
 .btn{
-  display:inline-flex;align-items:center;gap:5px;padding:5px 11px;
-  border-radius:var(--r);border:1px solid transparent;
-  font-family:var(--font);font-size:12px;font-weight:500;cursor:pointer;
-  transition:all var(--t);white-space:nowrap;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 16px;
+  border-radius:var(--r);border:1px solid var(--border-hi);background:var(--surface3);color:var(--text-hi);
+  font-family:var(--font);font-size:13.5px;font-weight:500;cursor:pointer;
+  transition:background var(--t),border-color var(--t),color var(--t);white-space:nowrap;
 }
-.btn-ghost{background:transparent;border-color:var(--border);color:var(--text-dim)}
-.btn-ghost:hover{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-dim)}
-.btn-primary{background:var(--cyan);color:#000;font-weight:700;font-size:13px;padding:9px 18px;border:none}
-.btn-primary:hover{background:#33d4ff;box-shadow:0 0 22px var(--cyan-glow)}
-.btn-success{background:var(--green);color:#000;font-weight:700;border:none}
-.btn-success:hover{background:#33eb8f;box-shadow:0 0 14px var(--green-dim)}
-.btn-purple{background:var(--purple);color:#000;font-weight:700;border:none}
-.btn-purple:hover{background:#c9a8ff;box-shadow:0 0 14px var(--purple-dim)}
-.btn-danger{background:transparent;border-color:var(--red);color:var(--red)}
+.btn:hover{background:#222B36;border-color:#3A4656}
+.btn-ghost{background:transparent;color:var(--text)}
+.btn-ghost:hover{background:var(--surface3);color:var(--text-hi)}
+.btn-primary{background:var(--cyan);border-color:var(--cyan);color:#0B1220;font-weight:600}
+.btn-primary:hover{background:var(--cyan-hi);border-color:var(--cyan-hi)}
+.btn-success{background:rgba(63,185,80,.16);border-color:rgba(63,185,80,.45);color:var(--green);font-weight:600}
+.btn-success:hover{background:rgba(63,185,80,.24)}
+.btn-purple{background:var(--purple-dim);border-color:rgba(179,146,240,.45);color:var(--purple);font-weight:600}
+.btn-purple:hover{background:rgba(179,146,240,.22)}
+.btn-danger{background:transparent;border-color:rgba(248,81,73,.5);color:var(--red)}
 .btn-danger:hover{background:var(--red-dim)}
-.btn-sm{padding:4px 9px;font-size:11px}
-.btn-xs{padding:2px 7px;font-size:10px}
+.btn-sm{height:32px;padding:0 12px;font-size:12.5px}
+.btn-xs{height:26px;padding:0 9px;font-size:12px}
 
-/* ── LEFT PANEL ── */
-.left-panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative}
-.panel-resizer{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;z-index:5;transition:background var(--t)}
-.panel-resizer:hover,.panel-resizer.dragging{background:var(--cyan-glow)}
-body.resizing{cursor:col-resize;user-select:none}
-.left-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:13px}
-.left-scroll > .section{flex-shrink:0}
+/* ── OPERATION (segmented) ── */
+.op-seg{display:flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;flex-shrink:0}
+.op-btn{
+  height:36px;padding:0 14px;border:0;background:transparent;color:var(--text-dim);
+  font-family:var(--font);font-size:13px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:all var(--t);
+}
+.op-btn:hover{color:var(--text-hi);background:var(--surface3)}
+.op-btn.active{background:var(--cyan);color:#0B1220}
 
-/* ── SECTIONS ── */
-.section{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);display:flex;flex-direction:column;overflow:hidden}
-.sec-head{
-  display:flex;align-items:center;gap:8px;padding:9px 13px;
-  border-bottom:1px solid var(--border);background:var(--surface3);
-}
-.sec-num{
-  width:18px;height:18px;background:var(--cyan);color:#000;border-radius:50%;
-  font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;
-}
-.sec-title{font-size:11px;font-weight:700;color:var(--text-hi);text-transform:uppercase;letter-spacing:.6px}
-.sec-body{padding:13px;flex:1;overflow-y:auto;min-height:0}
+/* ── SHEET STRIP (XLSX) ── */
+.sheet-strip{display:flex;align-items:center;gap:14px;padding:10px 28px 12px;background:var(--surface);border-bottom:1px solid var(--border);border-top:1px solid var(--border)}
+.strip-label{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.strip-actions{display:flex;gap:4px}
+.sheet-list{display:flex;gap:8px;overflow-x:auto;flex:1;min-width:0;padding:2px}
+.sheet-item{display:flex;align-items:center;gap:10px;padding:8px 12px 8px 10px;border:1px solid var(--border);border-radius:10px;flex-shrink:0;transition:all var(--t)}
+.sheet-item:hover{border-color:var(--border-hi);background:var(--surface2)}
+.sheet-item.active{background:#1B2635;border-color:#2B4A78}
+.sheet-item.empty{opacity:.45}
+.sheet-item.off .sheet-name{color:var(--text-dim)}
+.sheet-info{display:flex;flex-direction:column;gap:2px;align-items:flex-start;background:none;border:0;color:inherit;font:inherit;cursor:pointer;text-align:left}
+.sheet-item.empty .sheet-info{cursor:default}
+.sheet-name{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--text-hi);white-space:nowrap}
+.sheet-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.sheet-item.off .sheet-dot,.sheet-item.empty .sheet-dot{background:#4B5563}
+.sheet-meta{font-size:12px;color:var(--text-dim);white-space:nowrap}
+.sheet-tag{font-size:10.5px;font-weight:600;color:var(--yellow);text-transform:uppercase;letter-spacing:.3px}
+.strip-all{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);flex-shrink:0;cursor:pointer}
+
+/* ── WORKSPACE HEAD ── */
+.ws-head{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.ws-title{font-size:24px;font-weight:600;letter-spacing:-.3px;color:var(--text-hi)}
+.ws-sub{font-size:14px;color:var(--text-dim);margin-top:4px}
+.ws-sub code{font-family:var(--mono);color:var(--text-hi);font-size:13px}
+.ws-chips{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;font-size:12.5px;font-weight:500}
+.chip-warn{background:var(--orange-dim);color:var(--orange)}
+.chip-err{background:var(--red-dim);color:var(--red)}
+.chip-info{background:var(--cyan-dim);color:var(--cyan-hi)}
+
+/* ── SIDE CARDS ── */
+.card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:20px;display:flex;flex-direction:column;gap:14px}
+.card-title{font-size:14.5px;font-weight:600;color:var(--text-hi);display:flex;align-items:center;gap:8px}
+.card-label{font-size:11.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-dim)}
+.sum-row{display:flex;justify-content:space-between;gap:12px;font-size:13.5px}
+.sum-row span:first-child{color:var(--text-dim)}
+.sum-row span:last-child{color:var(--text-hi);text-align:right}
+.sum-row.warn span:last-child{color:var(--orange)}
 
 /* ── DROP ZONE ── */
 .drop-zone{
-  border:2px dashed var(--border-hi);border-radius:var(--r);
-  padding:22px 12px;text-align:center;cursor:pointer;
-  transition:all .2s;position:relative;
+  border:2px dashed var(--border-hi);border-radius:16px;padding:56px 24px;text-align:center;cursor:pointer;
+  transition:all .2s;position:relative;background:var(--surface2)
 }
 .drop-zone:hover,.drop-zone.drag-over{border-color:var(--cyan);background:var(--cyan-dim)}
-.dz-icon{font-size:26px;margin-bottom:7px}
-.dz-text{font-size:12px;color:var(--text-dim)}
-.dz-text strong{color:var(--cyan)}
-.dz-sub{font-size:10px;color:var(--text-dim);margin-top:3px}
+.dz-icon{font-size:34px;margin-bottom:10px}
+.dz-text{font-size:15px;color:var(--text)}
+.dz-text strong{color:var(--cyan-hi)}
+.dz-sub{font-size:12.5px;color:var(--text-dim);margin-top:6px}
 #fileInput{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-.file-loaded{
-  display:flex;align-items:center;gap:10px;padding:9px 11px;
-  background:var(--green-dim);border:1px solid rgba(0,230,118,.35);border-radius:var(--r);
-}
-.fl-info{flex:1;min-width:0}
-.fl-name{font-size:11px;font-weight:600;color:var(--green);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fl-meta{font-size:10px;color:var(--text-dim)}
-
-/* ── SHEETS (XLSX) ── */
-.sheet-list{max-height:210px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)}
-.sheet-item{display:flex;align-items:center;gap:7px;padding:5px 7px;border-bottom:1px solid var(--border);border-left:2px solid transparent}
-.sheet-item:last-child{border-bottom:none}
-.sheet-item.active{background:var(--cyan-dim);border-left-color:var(--cyan)}
-.sheet-item.empty{opacity:.45}
-.sheet-info{flex:1;min-width:0;cursor:pointer}
-.sheet-item.empty .sheet-info{cursor:default}
-.sheet-name{font-size:11px;font-weight:600;color:var(--text-hi);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sheet-item.active .sheet-name{color:var(--cyan)}
-.sheet-meta{font-size:10px;color:var(--text-dim)}
-.sheet-tag{font-size:9px;font-weight:700;color:var(--yellow);font-family:var(--font);text-transform:uppercase;margin-left:4px}
-.frow .sheet-item input.sheet-tbl{width:118px;flex-shrink:0;padding:3px 6px;font-size:11px;font-family:var(--mono)}
-.sheet-hint{font-size:10px;color:var(--text-dim);line-height:1.4}
 
 /* ── FORM ── */
-.frow{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.frow{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
 .frow:last-child{margin-bottom:0}
-.flabel{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px}
-.frow input[type=text],.frow input[type=number],.frow select{width:100%;padding:6px 9px;font-size:12px}
-.f2{display:grid;grid-template-columns:1fr 1.6fr;gap:8px}
-
-/* ── OP BUTTONS ── */
-.op-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
-.op-btn{
-  padding:7px 3px;text-align:center;border:1px solid var(--border);
-  border-radius:var(--r);cursor:pointer;font-size:10px;font-weight:700;
-  font-family:var(--mono);color:var(--text-dim);background:var(--surface);
-  transition:all var(--t);letter-spacing:-.3px;
-}
-.op-btn:hover{border-color:var(--cyan);color:var(--cyan)}
-.op-btn.active{background:var(--cyan);border-color:var(--cyan);color:#000}
+.flabel{font-size:12.5px;font-weight:500;color:var(--text-dim)}
+.frow input[type=text],.frow input[type=number],.frow select{width:100%}
+.f2{display:grid;grid-template-columns:1fr 1.6fr;gap:10px}
 
 /* ── COL MAPPING ── */
-.cmap-actions{display:flex;gap:6px;margin-bottom:9px;flex-wrap:wrap;align-items:center}
-.cmap-wrap{max-height:270px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)}
-.cmap-table{width:100%;border-collapse:collapse;font-size:11px}
+.cmap-actions{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.cmap-wrap{border:1px solid var(--border);border-radius:var(--r2);overflow:auto;background:var(--surface2)}
+.cmap-table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
 .cmap-table th{
-  padding:6px 7px;text-align:left;font-size:10px;font-weight:700;color:var(--text-dim);
-  text-transform:uppercase;letter-spacing:.4px;background:var(--surface3);
-  position:sticky;top:0;border-bottom:1px solid var(--border);
+  padding:12px 14px;text-align:left;font-size:11.5px;font-weight:600;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:.05em;background:var(--surface2);
+  position:sticky;top:0;border-bottom:1px solid var(--border);z-index:1
 }
-.cmap-table td{padding:4px 5px;border-bottom:1px solid var(--border);vertical-align:middle}
+.cmap-table td{padding:10px 14px;border-bottom:1px solid #1E252F;vertical-align:middle}
 .cmap-table tr:last-child td{border-bottom:none}
+.cmap-table tbody tr:hover td{background:rgba(255,255,255,.015)}
 .cmap-table tr.skipped td{opacity:.38}
 .csv-badge{
-  font-family:var(--mono);font-size:10px;color:var(--cyan);
-  background:var(--cyan-dim);padding:2px 5px;border-radius:3px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:82px;display:block;
+  font-family:var(--mono);font-size:12px;color:var(--text);background:var(--surface3);
+  padding:3px 8px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;display:inline-block
 }
-.cmap-table input[type=text]{width:100%;padding:3px 5px;font-size:11px;font-family:var(--mono)}
-.cmap-table select{width:100%;padding:3px 4px;font-size:11px}
-.chk-center{display:flex;align-items:center;justify-content:center}
-.legend-row{margin-top:8px;font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.badge{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:700;font-family:var(--mono)}
+.cmap-table input[type=text]{width:100%;padding:6px 9px;font-size:13px;font-family:var(--mono)}
+.cmap-table select{width:100%;padding:6px 8px;font-size:13px}
+.chk-center{text-align:center}
+.legend-row{margin-top:12px;font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.badge{font-size:11px;padding:2px 7px;border-radius:5px;font-weight:600;font-family:var(--mono)}
 .badge-key{background:var(--orange-dim);color:var(--orange)}
 .badge-fn{background:var(--purple-dim);color:var(--purple)}
 
-/* ── DB COLUMN CELL WITH ƒ BUTTON ── */
-.db-col-cell{display:flex;gap:3px;align-items:center}
+/* ── DB COLUMN CELL WITH ƒ / 🔗 BUTTONS ── */
+.db-col-cell{display:flex;gap:6px;align-items:center}
 .db-col-cell input{flex:1;min-width:0}
 .fn-btn{
-  flex-shrink:0;width:22px;height:22px;border-radius:4px;
-  display:inline-flex;align-items:center;justify-content:center;
-  background:var(--surface);border:1px solid var(--border);
-  color:var(--text-dim);cursor:pointer;font-family:var(--mono);
-  font-size:11px;font-weight:700;font-style:italic;
-  transition:all var(--t);
+  flex-shrink:0;width:30px;height:30px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--surface3);border:1px solid var(--border-hi);color:var(--text-dim);cursor:pointer;
+  font-family:var(--mono);font-size:13px;font-weight:700;font-style:italic;transition:all var(--t)
 }
 .fn-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-dim)}
-.ref-btn{font-style:normal;font-size:10px}
-.rf-warn{color:var(--orange);background:var(--orange-dim);border:1px solid rgba(255,112,67,.3);border-radius:var(--r);padding:7px 9px;font-size:11px;line-height:1.45}
-.ref-explain{font-size:12px;line-height:1.55;margin-bottom:8px}
-.ref-explain .rx-no{color:var(--red,#ff6b6b)}
-.ref-explain .rx-ok{color:var(--green,#3ddc84)}
-.ref-explain code{font-family:var(--mono);font-size:11px;background:var(--surface2);padding:1px 4px;border-radius:3px}
+.fn-btn.active{background:var(--purple-dim);border-color:var(--purple);color:var(--purple)}
+.ref-btn{font-style:normal;font-size:12px}
+.ref-btn.active{background:var(--cyan-dim);border-color:var(--cyan);color:var(--cyan-hi)}
 .ref-btn.dead{background:var(--orange-dim);border-color:var(--orange);box-shadow:none}
-.rep-row{display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px}
-.fn-section .rep-row input{width:auto;flex-shrink:0;margin-top:2px}
-.rep-row .rep-name{font-weight:600;color:var(--text)}
-.rep-row .rep-note{color:var(--text-dim);font-size:11px}
-.fn-btn.active{
-  background:var(--purple);border-color:var(--purple);color:#000;
-  box-shadow:0 0 8px var(--purple-dim);
-}
+.rf-warn{color:var(--orange);background:var(--orange-dim);border:1px solid rgba(210,153,34,.35);border-radius:var(--r);padding:9px 11px;font-size:12.5px;line-height:1.5}
+.ref-explain{font-size:13px;line-height:1.6;margin-bottom:10px;padding:12px 14px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border)}
+.ref-explain .rx-no{color:var(--red)}
+.ref-explain .rx-ok{color:var(--green)}
+.ref-explain code{font-family:var(--mono);font-size:12px;background:var(--surface3);padding:1px 5px;border-radius:4px}
+.rep-row{display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px}
+.fn-section .rep-row input{width:auto;flex-shrink:0;margin-top:3px}
+.rep-row .rep-name{font-weight:600;color:var(--text-hi)}
+.rep-row .rep-note{color:var(--text-dim);font-size:12px}
 
 /* ── ADVANCED ── */
-.adv-toggle{
-  display:flex;align-items:center;gap:7px;cursor:pointer;padding:9px 13px;
-  font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;
-  letter-spacing:.5px;user-select:none;transition:color var(--t);
-}
-.adv-toggle:hover{color:var(--text)}
-.adv-arrow{transition:transform .2s;font-size:9px}
+.adv-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--cyan-hi);user-select:none;background:none;border:0;font-family:var(--font);padding:0}
+.adv-toggle:hover{color:var(--text-hi)}
+.adv-arrow{transition:transform .2s;font-size:10px}
 .adv-arrow.open{transform:rotate(90deg)}
-.adv-body{padding:13px;display:none;flex-direction:column;gap:9px;flex:1;overflow-y:auto;min-height:0}
+.adv-body{display:none;flex-direction:column;gap:12px;padding-top:4px}
 .adv-body.open{display:flex}
-.opt-row{display:flex;align-items:center;gap:8px}
-.opt-label{font-size:12px;color:var(--text);cursor:pointer;flex:1;user-select:none}
-.opt-sub{font-size:11px;color:var(--text-dim);margin-left:22px;display:flex;align-items:center;gap:6px}
-.opt-sub input{width:62px!important}
-
-/* ── FOOTER ── */
-.left-footer{padding:12px 14px;border-top:1px solid var(--border);display:flex;gap:8px}
-.btn-gen{flex:1;justify-content:center;font-size:14px;padding:10px;letter-spacing:-.2px}
+.opt-row{display:flex;align-items:flex-start;gap:10px}
+.opt-row input{margin-top:2px;flex-shrink:0}
+.opt-label{font-size:13.5px;color:var(--text);cursor:pointer;flex:1;user-select:none;line-height:1.45}
+.opt-sub{font-size:12.5px;color:var(--text-dim);margin-left:26px;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.opt-sub select{width:100%!important}
+.opt-sub input{width:90px!important}
 
 /* ── INFO / WARNING ── */
-.info-box{background:var(--cyan-dim);border:1px solid rgba(0,200,255,.3);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--cyan);margin-top:9px;display:flex;gap:6px;align-items:flex-start}
-.warn-box{background:var(--orange-dim);border:1px solid rgba(255,112,67,.35);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--orange);margin-top:9px;display:flex;gap:6px;align-items:flex-start}
-.empty-panel{padding:28px;text-align:center;color:var(--text-dim);font-size:12px}
+.info-box{background:var(--cyan-dim);border:1px solid rgba(76,141,255,.3);border-radius:var(--r);padding:10px 12px;font-size:12.5px;color:var(--cyan-hi);display:flex;gap:6px;align-items:flex-start;line-height:1.5}
+.warn-box{background:var(--orange-dim);border:1px solid rgba(210,153,34,.35);border-radius:var(--r);padding:10px 12px;font-size:12.5px;color:var(--orange);display:flex;gap:6px;align-items:flex-start;line-height:1.5}
+.empty-panel{padding:40px;text-align:center;color:var(--text-dim);font-size:13.5px}
 
-/* ── RIGHT PANEL ── */
-.right-panel{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-.tabs{
-  display:flex;align-items:center;background:var(--surface);
-  border-bottom:1px solid var(--border);padding:0 14px;gap:0;flex-shrink:0;
-}
+/* ── TABS ── */
+.tabs{display:flex;align-items:center;border-bottom:1px solid var(--border);gap:4px;flex-shrink:0;flex-wrap:wrap}
 .tab{
-  padding:12px 15px;font-size:12px;font-weight:500;color:var(--text-dim);
-  cursor:pointer;border-bottom:2px solid transparent;transition:all var(--t);
-  display:flex;align-items:center;gap:6px;
+  padding:11px 14px;font-size:14px;font-weight:500;color:var(--text-dim);background:none;border:0;
+  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all var(--t);
+  display:flex;align-items:center;gap:8px;font-family:var(--font)
 }
-.tab:hover{color:var(--text)}
-.tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
-.tab-badge{
-  background:var(--surface3);color:var(--text-dim);font-size:10px;
-  padding:1px 6px;border-radius:10px;font-family:var(--mono);
-}
-.tab.active .tab-badge{background:var(--cyan-dim);color:var(--cyan)}
+.tab:hover{color:var(--text-hi)}
+.tab.active{color:var(--text-hi);font-weight:600;border-bottom-color:var(--cyan)}
+.tab-badge{background:var(--surface3);color:var(--text-dim);font-size:11.5px;padding:1px 8px;border-radius:10px;font-family:var(--mono)}
+.tab.active .tab-badge{background:var(--cyan-dim);color:var(--cyan-hi)}
 .tab-spacer{flex:1}
-.out-actions{display:flex;align-items:center;gap:8px}
-.out-stat{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
+.out-actions{display:flex;align-items:center;gap:8px;padding-bottom:6px}
+.out-stat{font-size:12px;color:var(--text-dim);font-family:var(--mono)}
 
 /* ── TAB CONTENT ── */
-.tab-content{flex:1;overflow:hidden;display:none}
+.tab-content{flex:1;overflow:hidden;display:none;min-height:0}
 .tab-content.active{display:flex;flex-direction:column}
+.map-wrap{flex:1;overflow:auto;padding:4px 0 24px}
 
 /* ── PREVIEW ── */
-.preview-wrap{flex:1;overflow:auto;padding:14px}
-.preview-table{border-collapse:collapse;font-size:11.5px;font-family:var(--mono);min-width:100%}
+.preview-wrap{flex:1;overflow:auto;padding:4px 0 24px}
+.preview-table{border-collapse:collapse;font-size:12.5px;font-family:var(--mono);min-width:100%}
 .preview-table th{
-  background:var(--surface2);color:var(--cyan);padding:7px 12px;
-  text-align:left;border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;
+  background:var(--surface2);color:var(--text-dim);padding:10px 14px;font-weight:600;
+  text-align:left;border:1px solid var(--border);white-space:nowrap;position:sticky;top:0
 }
-.preview-table td{padding:5px 12px;border:1px solid var(--border);color:var(--text);white-space:nowrap}
-.preview-table tr:nth-child(even) td{background:var(--surface)}
+.preview-table td{padding:8px 14px;border:1px solid #1E252F;color:var(--text);white-space:nowrap}
+.preview-table tr:nth-child(even) td{background:rgba(255,255,255,.015)}
 .preview-table tr:hover td{background:var(--surface2)}
-.preview-note{padding:8px 14px;font-size:11px;color:var(--text-dim);text-align:center}
-.skip-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-.skip-sum{font-size:12px;color:var(--text);flex:1;min-width:200px}
-.skip-group{margin-bottom:18px}
-.skip-title{font-size:12px;font-weight:700;color:var(--yellow);margin-bottom:6px;font-family:var(--mono)}
-.preview-table td.miss{background:rgba(255,82,82,.14) !important;outline:1px solid rgba(255,82,82,.45)}
+.preview-note{padding:12px 14px;font-size:12.5px;color:var(--text-dim);text-align:center}
+.skip-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.skip-sum{font-size:14px;color:var(--text);flex:1;min-width:200px}
+.skip-group{margin-bottom:22px}
+.skip-title{font-size:13.5px;font-weight:600;color:var(--orange);margin-bottom:8px;font-family:var(--mono)}
+.preview-table td.miss{background:var(--red-dim) !important;outline:1px solid rgba(248,81,73,.5)}
 
 /* ── SQL OUTPUT ── */
-.sql-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:14px;gap:10px}
+.sql-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:4px 0 24px;gap:10px}
 #sqlOutput{
-  flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
-  color:var(--green);font-family:var(--mono);font-size:12.5px;line-height:1.65;
-  padding:14px;resize:none;outline:none;overflow:auto;white-space:pre;
+  flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);
+  color:#C9E8D0;font-family:var(--mono);font-size:13px;line-height:1.7;
+  padding:16px 18px;resize:none;outline:none;overflow:auto;white-space:pre
 }
-#sqlOutput:focus{border-color:var(--border-hi)}
+#sqlOutput:focus{border-color:var(--border-hi);box-shadow:none}
 
 /* ── EMPTY STATE ── */
-.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text-dim)}
-.es-icon{font-size:44px;opacity:.35}
-.es-title{font-size:15px;font-weight:500;color:var(--text-dim)}
-.es-sub{font-size:11px;opacity:.7}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text-dim);padding:40px;text-align:center}
+.es-icon{font-size:40px;opacity:.4}
+.es-title{font-size:16px;font-weight:600;color:var(--text)}
+.es-sub{font-size:13px;max-width:520px;line-height:1.55}
 
 /* ── TOAST ── */
-.toast-wrap{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:7px;z-index:999}
+.toast-wrap{position:fixed;bottom:22px;right:22px;display:flex;flex-direction:column;gap:8px;z-index:999}
 .toast{
-  background:var(--surface2);border:1px solid var(--border-hi);border-radius:var(--r);
-  padding:9px 13px;font-size:12px;display:flex;align-items:center;gap:8px;
-  animation:slideIn .2s ease;box-shadow:0 6px 24px rgba(0,0,0,.5);
+  background:var(--surface3);border:1px solid var(--border-hi);border-radius:10px;max-width:460px;
+  padding:11px 15px;font-size:13.5px;display:flex;align-items:center;gap:9px;color:var(--text-hi);
+  animation:slideIn .2s ease;box-shadow:0 10px 30px rgba(0,0,0,.5)
 }
-.toast.success{border-color:rgba(0,230,118,.5);color:var(--green)}
-.toast.error{border-color:rgba(255,77,109,.5);color:var(--red)}
-.toast.info{border-color:rgba(0,200,255,.35);color:var(--cyan)}
+.toast.success{border-color:rgba(63,185,80,.5)}
+.toast.error{border-color:rgba(248,81,73,.55)}
+.toast.info{border-color:rgba(76,141,255,.45)}
 @keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
 
 /* ── MODAL ── */
-.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:900}
+.modal-ov{position:fixed;inset:0;background:rgba(4,6,10,.72);display:none;align-items:center;justify-content:center;z-index:900;padding:20px}
 .modal-ov.open{display:flex}
-.modal{background:var(--surface2);border:1px solid var(--border-hi);border-radius:var(--r2);padding:20px;width:400px;max-height:82vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.6)}
-.modal-lg{width:560px}
-.modal-head{font-size:14px;font-weight:700;color:var(--text-hi);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
-.modal-x{cursor:pointer;color:var(--text-dim);font-size:20px;line-height:1;transition:color var(--t)}
-.modal-x:hover{color:var(--red)}
-.prof-list{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:220px;overflow-y:auto}
-.prof-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
-.prof-name{flex:1;font-size:12px;font-family:var(--mono);color:var(--text)}
+.modal{background:var(--surface2);border:1px solid var(--border-hi);border-radius:16px;padding:24px;width:460px;max-width:100%;max-height:86vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.modal-lg{width:620px}
+.modal-head{font-size:16px;font-weight:600;color:var(--text-hi);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.modal-x{cursor:pointer;color:var(--text-dim);font-size:22px;line-height:1;transition:color var(--t)}
+.modal-x:hover{color:var(--text-hi)}
+.prof-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;max-height:240px;overflow-y:auto}
+.prof-item{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r)}
+.prof-name{flex:1;font-size:13px;font-family:var(--mono);color:var(--text-hi)}
 .prof-save{display:flex;gap:8px}
 .prof-save input{flex:1}
 .hidden{display:none!important}
 
-/* ── FUNCTION MODAL ── */
-.fn-modal-head{
-  display:flex;align-items:center;gap:10px;margin-bottom:14px;
-}
+/* ── FUNCTION / RULE MODALS ── */
+.fn-modal-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
 .fn-modal-head .fn-icon{
-  width:32px;height:32px;border-radius:7px;
-  background:linear-gradient(135deg,var(--purple),#7c4dff);
-  display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-style:italic;font-weight:700;
-  color:#000;font-size:17px;flex-shrink:0;
+  width:38px;height:38px;border-radius:10px;background:var(--purple-dim);border:1px solid rgba(179,146,240,.4);
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-style:italic;font-weight:700;
+  color:var(--purple);font-size:18px;flex-shrink:0
 }
-.fn-modal-head .fn-title{flex:1}
-.fn-modal-head h3{font-size:14px;font-weight:700;color:var(--text-hi);letter-spacing:-.2px}
-.fn-modal-head .fn-sub{font-size:11px;color:var(--text-dim);margin-top:1px}
-
-.fn-section{margin-bottom:14px}
-.fn-section-label{
-  font-size:10px;font-weight:700;color:var(--text-dim);
-  text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;
-}
-.fn-section select,.fn-section input{width:100%;padding:7px 10px;font-size:12px}
-
-.fn-params{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--r);padding:11px;display:flex;flex-direction:column;gap:9px;
-}
-.fn-param-row{display:flex;flex-direction:column;gap:3px}
-.fn-param-label{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.3px}
-.fn-param-hint{font-size:10px;color:var(--text-dim);font-style:italic;margin-top:1px}
-.fn-no-params{font-size:11px;color:var(--text-dim);text-align:center;padding:6px 0;font-style:italic}
-
-.fn-hint{
-  background:var(--cyan-dim);border:1px solid rgba(0,200,255,.25);
-  border-radius:var(--r);padding:7px 10px;font-size:11px;color:var(--cyan);
-  margin-top:8px;display:flex;gap:6px;align-items:flex-start;
-}
-.fn-warn{
-  background:var(--orange-dim);border:1px solid rgba(255,112,67,.3);
-  border-radius:var(--r);padding:7px 10px;font-size:11px;color:var(--orange);
-  margin-top:8px;display:flex;gap:6px;align-items:flex-start;
-}
-
-.fn-preview{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--r);overflow:hidden;
-}
-.fn-preview-head{
-  padding:7px 11px;background:var(--surface3);font-size:10px;
-  font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;
-  display:flex;justify-content:space-between;align-items:center;
-}
+.fn-modal-head .fn-title{flex:1;min-width:0}
+.fn-modal-head h3{font-size:16px;font-weight:600;color:var(--text-hi)}
+.fn-modal-head .fn-sub{font-size:12.5px;color:var(--text-dim);margin-top:2px}
+.fn-section{margin-bottom:16px}
+.fn-section-label{font-size:11.5px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.fn-section select,.fn-section input{width:100%}
+.fn-params{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+.fn-param-row{display:flex;flex-direction:column;gap:5px}
+.fn-param-label{font-size:12px;font-weight:500;color:var(--text-dim)}
+.fn-param-hint{font-size:12px;color:var(--text-dim);font-style:italic;margin-top:1px}
+.fn-no-params{font-size:12.5px;color:var(--text-dim);text-align:center;padding:6px 0;font-style:italic}
+.fn-hint{background:var(--cyan-dim);border:1px solid rgba(76,141,255,.28);border-radius:var(--r);padding:10px 12px;font-size:12.5px;color:var(--cyan-hi);margin-top:10px;display:flex;gap:8px;align-items:flex-start;line-height:1.5}
+.fn-warn{background:var(--orange-dim);border:1px solid rgba(210,153,34,.35);border-radius:var(--r);padding:10px 12px;font-size:12.5px;color:var(--orange);margin-top:10px;display:flex;gap:8px;align-items:flex-start;line-height:1.5}
+.fn-preview{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fn-preview-head{padding:8px 12px;background:var(--surface3);font-size:11.5px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
 .fn-preview-body{padding:0}
-.fn-preview-row{
-  display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;
-  padding:7px 11px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;
-}
+.fn-preview-row{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12.5px}
 .fn-preview-row:first-child{border-top:none}
 .fn-prev-in{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fn-prev-arrow{color:var(--purple);font-weight:700}
 .fn-prev-out{color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
 .fn-prev-out.empty-out{color:var(--text-dim);font-style:italic}
-
-.fn-modal-actions{
-  display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
-}
-.fn-modal-actions .btn{flex:1;justify-content:center;padding:8px 12px;font-size:12px}
-
-/* List view inside fn modal (when called from advanced options) */
-.fn-col-list{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--r);overflow:hidden;margin-bottom:12px;
-  max-height:200px;overflow-y:auto;
-}
-.fn-col-list-item{
-  display:flex;align-items:center;gap:8px;padding:8px 11px;
-  border-bottom:1px solid var(--border);cursor:pointer;
-  transition:background var(--t);
-}
+.fn-modal-actions{display:flex;gap:10px;margin-top:18px;padding-top:18px;border-top:1px solid var(--border)}
+.fn-modal-actions .btn{flex:1}
+.fn-col-list{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:14px;max-height:240px;overflow-y:auto}
+.fn-col-list-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background var(--t)}
 .fn-col-list-item:last-child{border-bottom:none}
-.fn-col-list-item:hover{background:var(--surface2)}
-.fn-col-list-item.selected{background:var(--purple-dim);border-left:3px solid var(--purple);padding-left:8px}
-.fn-col-list-name{flex:1;font-family:var(--mono);font-size:11.5px;color:var(--text)}
-.fn-col-list-fn{
-  font-family:var(--mono);font-size:10px;font-weight:700;font-style:italic;
-  background:var(--purple-dim);color:var(--purple);padding:2px 7px;border-radius:3px;
-}
-.fn-col-list-empty{font-family:var(--mono);font-size:10px;color:var(--text-dim);font-style:italic}
+.fn-col-list-item:hover{background:var(--surface3)}
+.fn-col-list-item.selected{background:var(--purple-dim);box-shadow:inset 3px 0 0 var(--purple)}
+.fn-col-list-name{flex:1;font-family:var(--mono);font-size:13px;color:var(--text-hi)}
+.fn-col-list-fn{font-family:var(--mono);font-size:11.5px;font-weight:600;background:var(--purple-dim);color:var(--purple);padding:2px 8px;border-radius:5px}
+.fn-col-list-empty{font-family:var(--mono);font-size:11.5px;color:var(--text-dim);font-style:italic}
 
-/* ── TABLE SCHEMA HISTORY ── */
-.restore-banner{
-  display:flex;align-items:center;gap:8px;padding:8px 13px;
-  background:linear-gradient(90deg,rgba(255,215,64,.08),transparent);
-  border-bottom:1px solid rgba(255,215,64,.25);flex-wrap:wrap;
-}
-.xlsx-banner{border:1px solid rgba(255,215,64,.25);border-radius:var(--r);margin-bottom:10px;padding:8px 10px}
-.rb-icon{font-size:14px;flex-shrink:0}
-.rb-text{flex:1;font-size:11px;color:var(--yellow);min-width:0}
+/* ── SAVED CONFIG BANNERS ── */
+.restore-banner{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--orange-dim);border:1px solid rgba(210,153,34,.35);border-radius:var(--r2);flex-wrap:wrap;flex-shrink:0}
+.xlsx-banner{}
+.rb-icon{font-size:16px;flex-shrink:0}
+.rb-text{flex:1;font-size:13.5px;color:var(--orange);min-width:0}
 .rb-text strong{font-family:var(--mono)}
-.rb-meta{font-size:10px;opacity:.65;display:block;margin-top:1px}
-.rb-actions{display:flex;gap:5px;flex-shrink:0}
-.btn-restore{
-  background:var(--yellow);color:#000;font-weight:700;font-size:11px;
-  padding:4px 10px;border-radius:var(--r);border:none;cursor:pointer;
-  transition:all var(--t);white-space:nowrap;
-}
-.btn-restore:hover{background:#ffe566;box-shadow:0 0 12px rgba(255,215,64,.4)}
+.rb-meta{font-size:12px;opacity:.8;display:block;margin-top:2px;color:var(--text)}
+.rb-actions{display:flex;gap:6px;flex-shrink:0}
+.btn-restore{height:32px;padding:0 14px;background:var(--orange);color:#1A1405;font-weight:600;font-size:13px;border-radius:var(--r);border:none;cursor:pointer;font-family:var(--font);white-space:nowrap}
+.btn-restore:hover{background:#F0C35C}
 .tbl-indicator{
-  display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
-  color:var(--yellow);background:rgba(255,215,64,.1);border:1px solid rgba(255,215,64,.3);
-  padding:2px 7px;border-radius:10px;cursor:pointer;white-space:nowrap;flex-shrink:0;
-  transition:all var(--t);font-family:var(--mono);
+  display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:500;color:var(--orange);
+  background:var(--orange-dim);border:1px solid rgba(210,153,34,.35);padding:1px 8px;border-radius:10px;
+  cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:var(--mono)
 }
-.tbl-indicator:hover{background:rgba(255,215,64,.18);border-color:var(--yellow)}
+.tbl-indicator:hover{border-color:var(--orange)}
 
 /* Modal tabs */
-.modal-tabs{display:flex;border-bottom:1px solid var(--border);margin:-20px -20px 16px;padding:0 20px;gap:0}
-.modal-tab{
-  padding:10px 14px;font-size:12px;font-weight:500;color:var(--text-dim);cursor:pointer;
-  border-bottom:2px solid transparent;transition:all var(--t);
-}
-.modal-tab:hover{color:var(--text)}
-.modal-tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.modal-tabs{display:flex;border-bottom:1px solid var(--border);margin:-24px -24px 18px;padding:0 24px;gap:0}
+.modal-tab{padding:13px 14px;font-size:13.5px;font-weight:500;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all var(--t)}
+.modal-tab:hover{color:var(--text-hi)}
+.modal-tab.active{color:var(--text-hi);border-bottom-color:var(--cyan)}
 .modal-pane{display:none}
 .modal-pane.active{display:block}
-.tbl-item{
-  display:flex;align-items:center;gap:8px;padding:8px 10px;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;
-}
+.tbl-item{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px}
 .tbl-item-info{flex:1;min-width:0}
-.tbl-item-name{font-size:12px;font-family:var(--mono);color:var(--yellow);font-weight:600}
-.tbl-item-meta{font-size:10px;color:var(--text-dim);margin-top:1px}
-.tbl-empty{color:var(--text-dim);font-size:12px;padding:8px 0;text-align:center}
+.tbl-item-name{font-size:13px;font-family:var(--mono);color:var(--text-hi);font-weight:500}
+.tbl-item-meta{font-size:12px;color:var(--text-dim);margin-top:2px}
+.tbl-empty{color:var(--text-dim);font-size:13px;padding:10px 0;text-align:center}
+
+/* ── NARROW SCREENS ── */
+@media (max-width: 1000px){
+  html,body{overflow:auto}
+  .app{height:auto;min-height:100vh}
+  .workspace{grid-template-columns:1fr}
+  .ws-side{border-left:0;border-top:1px solid var(--border);overflow:visible}
+  .side-resizer{display:none}
+  .ws-main{overflow:visible}
+  .tab-content{min-height:420px}
+}
 </style>
 </head>
 <body>
@@ -455,253 +384,122 @@ body.resizing{cursor:col-resize;user-select:none}
 
   <header class="header">
     <div class="logo">
-      <div class="logo-mark">⚡</div>
+      <svg width="30" height="30" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="6" fill="#4C8DFF"></rect><path d="M8 9h6M8 13h10M8 17h7" stroke="#0E1116" stroke-width="2" stroke-linecap="round"></path></svg>
       <div class="logo-text">CSV<em>→SQL</em></div>
     </div>
     <div class="hbar"></div>
+    <div class="file-pill">
+      <div id="fileLoaded" class="file-pill hidden">
+        <div class="fl-info">
+          <span class="fl-name" id="fName">—</span>
+          <span class="fl-meta" id="fMeta">—</span>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="resetFile()" title="Fechar arquivo" aria-label="Fechar arquivo">✕</button>
+      </div>
+      <span class="fl-empty" id="fileNone">Nenhum arquivo carregado</span>
+    </div>
+    <div class="op-seg" role="group" aria-label="Operação SQL">
+      <button class="op-btn active" data-op="INSERT" onclick="setOp('INSERT')">INSERT</button>
+      <button class="op-btn" data-op="UPDATE" onclick="setOp('UPDATE')">UPDATE</button>
+      <button class="op-btn" data-op="DELETE" onclick="setOp('DELETE')">DELETE</button>
+      <button class="op-btn" data-op="SELECT" onclick="setOp('SELECT')">SELECT</button>
+      <button class="op-btn" data-op="MERGE" onclick="setOp('MERGE')">MERGE</button>
+    </div>
     <div class="profile-bar">
-      <span class="plabel">Perfil</span>
-      <select id="profileSelect" style="min-width:150px" onchange="onProfileSelect(this.value)">
+      <label class="plabel" for="profileSelect">Perfil</label>
+      <select id="profileSelect" style="width:150px;height:38px" onchange="onProfileSelect(this.value)">
         <option value="">— nenhum —</option>
       </select>
-      <button class="btn btn-ghost btn-sm" onclick="openProfileModal()">💾 Gerenciar</button>
-      <button class="btn btn-ghost btn-sm" onclick="resetAll()">↺ Limpar</button>
+      <button class="btn" onclick="openProfileModal()">Perfis e salvos</button>
+      <button class="btn btn-ghost" onclick="resetAll()">Limpar</button>
+      <button class="btn btn-primary" onclick="generateSQL()" style="padding:0 20px">Gerar SQL</button>
     </div>
   </header>
 
-  <main class="main">
-
-    <aside class="left-panel">
-      <div class="left-scroll">
-
-        <div class="section">
-          <div class="sec-head"><div class="sec-num">1</div><span class="sec-title">Importar Arquivo</span></div>
-          <div class="sec-body">
-            <div id="dropZone" class="drop-zone">
-              <input type="file" id="fileInput" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,.ods">
-              <div class="dz-icon">📂</div>
-              <div class="dz-text"><strong>Clique ou arraste</strong> o arquivo aqui</div>
-              <div class="dz-sub">.csv · .txt · .tsv — UTF-8 ou Latin-1 · .xlsx · .xls (várias abas)</div>
-            </div>
-            <div id="fileLoaded" class="file-loaded hidden">
-              <span style="font-size:18px">✅</span>
-              <div class="fl-info">
-                <div class="fl-name" id="fName">—</div>
-                <div class="fl-meta" id="fMeta">—</div>
-              </div>
-              <button class="btn btn-ghost btn-xs" onclick="resetFile()">✕</button>
-            </div>
-            <div id="sheetBox" class="hidden" style="margin-top:10px">
-              <div id="xlsxBanner" class="restore-banner xlsx-banner hidden">
-                <span class="rb-icon">📗</span>
-                <div class="rb-text">
-                  Config salva encontrada para este Excel
-                  <span class="rb-meta" id="xbMeta"></span>
-                </div>
-                <div class="rb-actions">
-                  <button class="btn-restore" onclick="restoreXlsxCfg()">↩ Restaurar</button>
-                  <button class="btn btn-ghost btn-xs" onclick="hideXlsxBanner()">✕</button>
-                </div>
-              </div>
-              <div class="frow">
-                <label class="flabel" style="display:flex;align-items:center;justify-content:space-between">
-                  <span>Abas da planilha</span>
-                  <span style="display:flex;gap:4px;text-transform:none;letter-spacing:0">
-                    <button class="btn btn-ghost btn-xs" onclick="setAllSheetsInclude(true)">Todas</button>
-                    <button class="btn btn-ghost btn-xs" onclick="setAllSheetsInclude(false)">Nenhuma</button>
-                  </span>
-                </label>
-                <div class="sheet-list" id="sheetList"></div>
-                <div class="sheet-hint">☑ = incluir na geração · clique no nome para configurar a aba · campo à direita = tabela de destino</div>
-              </div>
-              <div class="frow">
-                <label class="flabel" for="hdrRowIn">Linha do cabeçalho (aba ativa)</label>
-                <input type="number" id="hdrRowIn" min="1" value="1" onchange="onHdrRowChange()">
-              </div>
-              <div class="opt-row">
-                <input type="checkbox" id="optAllSheets" checked>
-                <label class="opt-label" for="optAllSheets">Gerar SQL de todas as abas marcadas <span style="color:var(--text-dim);font-weight:400">(um script, uma tabela por aba)</span></label>
-              </div>
-            </div>
-            <div class="frow" id="delimRow" style="margin-top:10px">
-              <label class="flabel">Delimitador</label>
-              <select id="delimSel" onchange="onDelimChange()">
-                <option value="auto">🔍 Auto-detectar</option>
-                <option value=",">Vírgula  ,</option>
-                <option value=";">Ponto e vírgula  ;</option>
-                <option value="&#9;">Tab  \t</option>
-                <option value="|">Pipe  |</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="sec-head"><div class="sec-num">2</div><span class="sec-title">Configurar Operação</span></div>
-          <div class="sec-body">
-            <div class="f2" style="margin-bottom:10px">
-              <div class="frow" style="margin-bottom:0">
-                <label class="flabel">Schema</label>
-                <input type="text" id="schemaIn" value="dbo" placeholder="dbo">
-              </div>
-              <div class="frow" style="margin-bottom:0">
-                <label class="flabel" style="display:flex;align-items:center;gap:6px;justify-content:space-between">
-                  <span>Tabela *</span>
-                  <span id="tblIndicator" class="tbl-indicator hidden" onclick="openModalOnTables()" title="Configuração salva — clique para ver histórico">🕐 <span id="tblIndLabel">salvo</span></span>
-                </label>
-                <input type="text" id="tableIn" placeholder="NomeDaTabela" oninput="onTableInput()" onblur="checkTableRestore()">
-              </div>
-            </div>
-            <div class="frow">
-              <label class="flabel">Operação SQL</label>
-              <div class="op-grid">
-                <div class="op-btn active" data-op="INSERT"  onclick="setOp('INSERT')">INSERT</div>
-                <div class="op-btn"        data-op="UPDATE"  onclick="setOp('UPDATE')">UPDATE</div>
-                <div class="op-btn"        data-op="DELETE"  onclick="setOp('DELETE')">DELETE</div>
-                <div class="op-btn"        data-op="SELECT"  onclick="setOp('SELECT')">SELECT</div>
-                <div class="op-btn"        data-op="MERGE"   onclick="setOp('MERGE')">MERGE</div>
-              </div>
-            </div>
-            <div id="opHint" class="hidden"></div>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="sec-head"><div class="sec-num">3</div><span class="sec-title">Mapeamento de Colunas</span></div>
-          <!-- Auto-restore banner -->
-          <div id="restoreBanner" class="restore-banner hidden">
-            <span class="rb-icon">📌</span>
-            <div class="rb-text">
-              Config salva encontrada para <strong id="rbTblName"></strong>
-              <span class="rb-meta" id="rbMeta"></span>
-            </div>
-            <div class="rb-actions">
-              <button class="btn-restore" onclick="restoreTableSchema()">↩ Restaurar</button>
-              <button class="btn btn-ghost btn-xs" onclick="hideRestoreBanner()">✕</button>
-            </div>
-          </div>
-          <div class="sec-body" id="colMapBody">
-            <div class="empty-panel">📥 Importe um arquivo para mapear as colunas</div>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="adv-toggle" onclick="toggleAdv()">
-            <span class="adv-arrow" id="advArr">▶</span>
-            <span>Opções Avançadas</span>
-          </div>
-          <div class="adv-body" id="advBody">
-
-            <div class="opt-row">
-              <input type="checkbox" id="optNC" checked>
-              <label class="opt-label" for="optNC">SET NOCOUNT ON</label>
-            </div>
-            <div class="opt-row">
-              <input type="checkbox" id="optTR">
-              <label class="opt-label" for="optTR">BEGIN TRAN / COMMIT</label>
-            </div>
-            <div class="opt-row">
-              <input type="checkbox" id="optRB" checked>
-              <label class="opt-label" for="optRB">ROLLBACK automático em caso de erro <span style="color:var(--text-dim);font-weight:400">(transação + TRY/CATCH; mostra o erro capturado)</span></label>
-            </div>
-            <div class="opt-sub">
-              Transação:
-              <select id="optTX" style="width:auto">
-                <option value="sheet">Uma por aba (COMMIT a cada aba bem-sucedida)</option>
-                <option value="all">Uma para tudo (erro desfaz todas as abas)</option>
-              </select>
-            </div>
-            <div class="opt-sub">
-              Linha recusada pelo banco (INSERT):
-              <select id="optRF" style="width:auto" onchange="toggleRFWarn()">
-                <option value="undo">Desfazer a aba / transação inteira (recomendado)</option>
-                <option value="skip">Pular a linha e continuar — só para TESTAR a carga</option>
-              </select>
-            </div>
-            <div class="opt-sub rf-warn" id="rfWarn" style="display:none">
-              ⚠ Modo teste: cada linha roda na própria transação; as recusadas pelo banco (ex.: saldo negativo) são puladas e listadas, e o restante é gravado. A carga pode ficar <strong>parcial</strong> — use numa base de teste para descobrir todas as recusadas e rode a carga real com "Desfazer".
-            </div>
-            <div class="opt-row">
-              <input type="checkbox" id="optSK" checked>
-              <label class="opt-label" for="optSK">Ignorar linhas com campo obrigatório vazio <span style="color:var(--text-dim);font-weight:400">(INSERT/MERGE — marque as colunas em "Obrig."; as ignoradas vão para a aba 🚫 Ignoradas)</span></label>
-            </div>
-            <div class="opt-row">
-              <input type="checkbox" id="optMV" onchange="toggleMVRow()">
-              <label class="opt-label" for="optMV">INSERT multi-values <span style="color:var(--text-dim);font-weight:400">(apenas INSERT)</span></label>
-            </div>
-            <div class="opt-sub" id="mvRow" style="display:none">
-              Registros por bloco:
-              <input type="number" id="optBS" value="500" min="1" max="9999">
-            </div>
-            <div class="opt-row">
-              <input type="checkbox" id="optSelIn" onchange="updateSelInOptions()">
-              <label class="opt-label" for="optSelIn">SELECT com IN <span style="color:var(--text-dim);font-weight:400">(apenas SELECT — gera 1 único SELECT em vez de um por linha)</span></label>
-            </div>
-            <div class="opt-sub" id="selInRow" style="display:none">
-              Coluna WHERE para o IN:
-              <select id="selInColSel"></select>
-            </div>
-            <div class="opt-row">
-              <input type="checkbox" id="optGO" onchange="toggleGORow()">
-              <label class="opt-label" for="optGO">Inserir GO a cada N comandos</label>
-            </div>
-            <div class="opt-sub" id="goRow" style="display:none">
-              N = <input type="number" id="optGN" value="1000" min="1" max="99999">
-            </div>
-            <div class="frow">
-              <label class="flabel">Células vazias → tratar como</label>
-              <select id="optEA" onchange="toggleDefaultRow()">
-                <option value="NULL">NULL</option>
-                <option value="empty">String vazia ('')</option>
-                <option value="default">Valor padrão</option>
-              </select>
-            </div>
-            <div class="frow" id="defRow" style="display:none">
-              <label class="flabel">Valor padrão</label>
-              <input type="text" id="optDV" placeholder="Ex: 0 ou N/A">
-            </div>
-
-            <!-- ── BOTÃO FUNÇÕES DE COLUNA ── -->
-            <div style="border-top:1px solid var(--border);padding-top:11px;margin-top:4px">
-              <button class="btn btn-purple btn-sm" onclick="openFnPickerModal()" style="width:100%;justify-content:center;padding:8px;font-size:12px">
-                <span style="font-family:var(--mono);font-style:italic;font-weight:700">ƒ</span>
-                <span>Funções de Coluna</span>
-                <span id="fnCountBadge" style="background:rgba(0,0,0,.18);color:#000;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:800;margin-left:auto" class="hidden">0</span>
-              </button>
-              <div style="font-size:10px;color:var(--text-dim);margin-top:5px;line-height:1.4">
-                Aplica transformações (sequencial, sanitização, etc.) a colunas específicas antes da geração do SQL.
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-      </div><div class="left-footer">
-        <button class="btn btn-primary btn-gen" onclick="generateSQL()">⚡ Gerar SQL</button>
+  <nav id="sheetBox" class="sheet-strip hidden" aria-label="Abas da planilha">
+    <div class="strip-label">
+      <span class="card-label">Abas</span>
+      <div class="strip-actions">
+        <button class="btn btn-ghost btn-xs" onclick="setAllSheetsInclude(true)">Todas</button>
+        <button class="btn btn-ghost btn-xs" onclick="setAllSheetsInclude(false)">Nenhuma</button>
       </div>
-      <div class="panel-resizer" id="panelResizer" title="Arraste para redimensionar · duplo clique para voltar ao tamanho padrão"></div>
-    </aside>
+    </div>
+    <div class="sheet-list" id="sheetList"></div>
+    <label class="strip-all" for="optAllSheets">
+      <input type="checkbox" id="optAllSheets" checked>
+      Gerar todas as abas marcadas
+    </label>
+  </nav>
 
-    <section class="right-panel">
-      <div class="tabs">
-        <div class="tab active" data-tab="preview" onclick="switchTab('preview')">
-          📋 Preview <span class="tab-badge" id="prevBadge">0 linhas</span>
+  <div class="workspace">
+    <main class="ws-main">
+
+      <div id="dropZone" class="drop-zone">
+        <input type="file" id="fileInput" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,.ods" aria-label="Escolher arquivo">
+        <div class="dz-icon">📂</div>
+        <div class="dz-text"><strong>Clique ou arraste</strong> o arquivo aqui</div>
+        <div class="dz-sub">.csv · .txt · .tsv (UTF-8 ou Latin-1) · .xlsx · .xls · .ods com várias abas</div>
+      </div>
+
+      <div class="ws-head" id="wsHead">
+        <div>
+          <h1 class="ws-title" id="wsTitle">Nenhum arquivo carregado</h1>
+          <div class="ws-sub" id="wsSub">Importe um CSV ou Excel para começar</div>
         </div>
-        <div class="tab" data-tab="output" onclick="switchTab('output')">
-          🗄️ SQL Output <span class="tab-badge" id="outBadge">0 cmds</span>
+        <div class="ws-chips" id="wsChips"></div>
+      </div>
+
+      <div id="xlsxBanner" class="restore-banner xlsx-banner hidden">
+        <span class="rb-icon">📗</span>
+        <div class="rb-text">
+          Config salva encontrada para este Excel
+          <span class="rb-meta" id="xbMeta"></span>
         </div>
-        <div class="tab" data-tab="skipped" onclick="switchTab('skipped')">
-          🚫 Ignoradas <span class="tab-badge" id="skipBadge">0</span>
+        <div class="rb-actions">
+          <button class="btn-restore" onclick="restoreXlsxCfg()">↩ Restaurar</button>
+          <button class="btn btn-ghost btn-xs" onclick="hideXlsxBanner()" aria-label="Dispensar">✕</button>
         </div>
+      </div>
+      <div id="restoreBanner" class="restore-banner hidden">
+        <span class="rb-icon">📌</span>
+        <div class="rb-text">
+          Config salva encontrada para <strong id="rbTblName"></strong>
+          <span class="rb-meta" id="rbMeta"></span>
+        </div>
+        <div class="rb-actions">
+          <button class="btn-restore" onclick="restoreTableSchema()">↩ Restaurar</button>
+          <button class="btn btn-ghost btn-xs" onclick="hideRestoreBanner()" aria-label="Dispensar">✕</button>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="map" onclick="switchTab('map')">
+          Mapeamento <span class="tab-badge" id="mapBadge">0 cols</span>
+        </button>
+        <button class="tab" data-tab="preview" onclick="switchTab('preview')">
+          Preview <span class="tab-badge" id="prevBadge">0 linhas</span>
+        </button>
+        <button class="tab" data-tab="output" onclick="switchTab('output')">
+          SQL <span class="tab-badge" id="outBadge">0 cmds</span>
+        </button>
+        <button class="tab" data-tab="skipped" onclick="switchTab('skipped')">
+          Ignoradas <span class="tab-badge" id="skipBadge">0</span>
+        </button>
         <div class="tab-spacer"></div>
         <div class="out-actions">
           <span class="out-stat" id="outStat"></span>
-          <button class="btn btn-ghost btn-sm hidden" id="btnCopy" onclick="copySQL()">📋 Copiar tudo</button>
+          <button class="btn btn-sm hidden" id="btnCopy" onclick="copySQL()">Copiar tudo</button>
           <button class="btn btn-success btn-sm hidden" id="btnExport" onclick="exportSQL()">⬇ Exportar .sql</button>
         </div>
       </div>
 
-      <div class="tab-content active" id="tabPreview">
+      <div class="tab-content active" id="tabMap">
+        <div class="map-wrap" id="colMapBody">
+          <div class="empty-panel">Importe um arquivo para mapear as colunas</div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tabPreview">
         <div class="preview-wrap">
           <div class="empty-state" id="prevEmpty">
             <div class="es-icon">📂</div>
@@ -716,10 +514,10 @@ body.resizing{cursor:col-resize;user-select:none}
         <div class="sql-wrap">
           <div class="empty-state" id="outEmpty">
             <div class="es-icon">⚡</div>
-            <div class="es-title">Output SQL aparece aqui</div>
-            <div class="es-sub">Configure os parâmetros e clique em "Gerar SQL"</div>
+            <div class="es-title">O SQL aparece aqui</div>
+            <div class="es-sub">Configure o mapeamento e clique em "Gerar SQL"</div>
           </div>
-          <textarea id="sqlOutput" class="hidden" spellcheck="false" readonly></textarea>
+          <textarea id="sqlOutput" class="hidden" spellcheck="false" readonly aria-label="SQL gerado"></textarea>
         </div>
       </div>
 
@@ -727,7 +525,7 @@ body.resizing{cursor:col-resize;user-select:none}
         <div class="preview-wrap">
           <div class="skip-bar">
             <div class="skip-sum" id="skipSum"></div>
-            <button class="btn btn-ghost btn-sm" onclick="openIgnImport()" title="Colar o resultado das linhas ignoradas pelas regras de referência (final do script, no SSMS)">📥 Importar do banco</button>
+            <button class="btn btn-sm" onclick="openIgnImport()" title="Colar o resultado das linhas ignoradas/recusadas (final do script, no SSMS)">📥 Importar do banco</button>
             <button class="btn btn-success btn-sm hidden" id="btnSkipExport" onclick="exportSkipped()">⬇ Exportar planilha (.xlsx)</button>
           </div>
           <div class="empty-state" id="skipEmpty">
@@ -738,9 +536,130 @@ body.resizing{cursor:col-resize;user-select:none}
           <div id="skipBody" class="hidden"></div>
         </div>
       </div>
-    </section>
+    </main>
 
-  </main>
+    <aside class="ws-side" aria-label="Destino e execução">
+      <div class="side-resizer" id="panelResizer" title="Arraste para redimensionar · duplo clique para voltar ao tamanho padrão"></div>
+
+      <section class="card">
+        <div class="card-title">Destino</div>
+        <div class="f2">
+          <div class="frow" style="margin-bottom:0">
+            <label class="flabel" for="schemaIn">Schema</label>
+            <input type="text" id="schemaIn" value="dbo" placeholder="dbo" oninput="updateWsHead()">
+          </div>
+          <div class="frow" style="margin-bottom:0">
+            <label class="flabel" for="tableIn" style="display:flex;align-items:center;gap:6px;justify-content:space-between">
+              <span>Tabela *</span>
+              <span id="tblIndicator" class="tbl-indicator hidden" onclick="openModalOnTables()" title="Configuração salva — clique para ver histórico">🕐 <span id="tblIndLabel">salvo</span></span>
+            </label>
+            <input type="text" id="tableIn" placeholder="NomeDaTabela" oninput="onTableInput()" onblur="checkTableRestore()">
+          </div>
+        </div>
+        <div class="frow hidden" id="hdrRowRow" style="margin-bottom:0">
+          <label class="flabel" for="hdrRowIn">Linha do cabeçalho (aba ativa)</label>
+          <input type="number" id="hdrRowIn" min="1" value="1" onchange="onHdrRowChange()">
+        </div>
+        <div class="frow" id="delimRow" style="margin-bottom:0">
+          <label class="flabel" for="delimSel">Delimitador</label>
+          <select id="delimSel" onchange="onDelimChange()">
+            <option value="auto">Auto-detectar</option>
+            <option value=",">Vírgula  ,</option>
+            <option value=";">Ponto e vírgula  ;</option>
+            <option value="&#9;">Tab  \t</option>
+            <option value="|">Pipe  |</option>
+          </select>
+        </div>
+        <div id="opHint" class="hidden"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">Execução</div>
+        <div id="execSummary" style="display:flex;flex-direction:column;gap:10px"></div>
+        <button class="adv-toggle" onclick="toggleAdv()" aria-controls="advBody">
+          <span class="adv-arrow" id="advArr">▶</span>
+          <span>Opções avançadas</span>
+        </button>
+        <div class="adv-body" id="advBody">
+
+          <div class="opt-row">
+            <input type="checkbox" id="optNC" checked>
+            <label class="opt-label" for="optNC">SET NOCOUNT ON</label>
+          </div>
+          <div class="opt-row">
+            <input type="checkbox" id="optTR">
+            <label class="opt-label" for="optTR">BEGIN TRAN / COMMIT</label>
+          </div>
+          <div class="opt-row">
+            <input type="checkbox" id="optRB" checked>
+            <label class="opt-label" for="optRB">ROLLBACK automático em caso de erro <span style="color:var(--text-dim)">(transação + TRY/CATCH; mostra o erro capturado)</span></label>
+          </div>
+          <div class="opt-sub">
+            <label for="optTX">Transação</label>
+            <select id="optTX">
+              <option value="sheet">Uma por aba (COMMIT a cada aba bem-sucedida)</option>
+              <option value="all">Uma para tudo (erro desfaz todas as abas)</option>
+            </select>
+          </div>
+          <div class="opt-sub">
+            <label for="optRF">Linha recusada pelo banco (INSERT)</label>
+            <select id="optRF" onchange="toggleRFWarn()">
+              <option value="undo">Desfazer a aba / transação inteira (recomendado)</option>
+              <option value="skip">Pular a linha e continuar — só para TESTAR a carga</option>
+            </select>
+          </div>
+          <div class="opt-sub rf-warn" id="rfWarn" style="display:none">
+            ⚠ Modo teste: cada linha roda na própria transação; as recusadas pelo banco (ex.: saldo negativo) são puladas e listadas, e o restante é gravado. A carga pode ficar <strong>parcial</strong> — use numa base de teste para descobrir todas as recusadas e rode a carga real com "Desfazer".
+          </div>
+          <div class="opt-row">
+            <input type="checkbox" id="optSK" checked>
+            <label class="opt-label" for="optSK">Ignorar linhas com campo obrigatório vazio <span style="color:var(--text-dim)">(INSERT/MERGE — marque "Obrig."; vão para Ignoradas)</span></label>
+          </div>
+          <div class="opt-row">
+            <input type="checkbox" id="optMV" onchange="toggleMVRow()">
+            <label class="opt-label" for="optMV">INSERT multi-values <span style="color:var(--text-dim)">(apenas INSERT)</span></label>
+          </div>
+          <div class="opt-sub" id="mvRow" style="display:none">
+            <label for="optBS">Registros por bloco</label>
+            <input type="number" id="optBS" value="500" min="1" max="9999">
+          </div>
+          <div class="opt-row">
+            <input type="checkbox" id="optSelIn" onchange="updateSelInOptions()">
+            <label class="opt-label" for="optSelIn">SELECT com IN <span style="color:var(--text-dim)">(apenas SELECT — um único SELECT em vez de um por linha)</span></label>
+          </div>
+          <div class="opt-sub" id="selInRow" style="display:none">
+            <label for="selInColSel">Coluna WHERE para o IN</label>
+            <select id="selInColSel"></select>
+          </div>
+          <div class="opt-row">
+            <input type="checkbox" id="optGO" onchange="toggleGORow()">
+            <label class="opt-label" for="optGO">Inserir GO a cada N comandos</label>
+          </div>
+          <div class="opt-sub" id="goRow" style="display:none">
+            <label for="optGN">N</label>
+            <input type="number" id="optGN" value="1000" min="1" max="99999">
+          </div>
+          <div class="frow">
+            <label class="flabel" for="optEA">Células vazias → tratar como</label>
+            <select id="optEA" onchange="toggleDefaultRow()">
+              <option value="NULL">NULL</option>
+              <option value="empty">String vazia ('')</option>
+              <option value="default">Valor padrão</option>
+            </select>
+          </div>
+          <div class="frow" id="defRow" style="display:none">
+            <label class="flabel" for="optDV">Valor padrão</label>
+            <input type="text" id="optDV" placeholder="Ex: 0 ou N/A">
+          </div>
+        </div>
+        <button class="btn btn-purple" onclick="openFnPickerModal()" style="width:100%">
+          <span style="font-family:var(--mono);font-style:italic;font-weight:700">ƒ</span>
+          <span>Funções de coluna</span>
+          <span id="fnCountBadge" style="background:rgba(179,146,240,.25);font-size:11px;padding:1px 7px;border-radius:8px;font-weight:700;margin-left:auto" class="hidden">0</span>
+        </button>
+      </section>
+    </aside>
+  </div>
 </div>
 
 <div class="toast-wrap" id="toastWrap"></div>
@@ -1394,6 +1313,7 @@ function isXlsx() { return S.source === 'xlsx' && S.sheets.length > 0; }
 
 function showSheetUI(on) {
   document.getElementById('sheetBox').classList.toggle('hidden', !on);
+  document.getElementById('hdrRowRow').classList.toggle('hidden', !on);
   document.getElementById('delimRow').classList.toggle('hidden', on);
 }
 
@@ -1450,6 +1370,8 @@ function onHdrRowChange() {
 
 function setSheetInclude(i, on) {
   S.sheets[i].include = on;
+  renderSheetList();
+  updateWsHead();
 }
 
 function setAllSheetsInclude(on) {
@@ -1465,17 +1387,18 @@ function setSheetTable(i, value) {
   }
 }
 
+// Faixa de abas no topo: ☑ inclui na geração; clicar no nome abre a aba (a tabela de destino é
+// editada no cartão Destino, para a aba ativa)
 function renderSheetList() {
   document.getElementById('sheetList').innerHTML = S.sheets.map((s, i) => {
     const empty = !s.headers.length || !s.rows.length;
-    const meta = empty ? 'vazia' : `${s.rows.length.toLocaleString('pt-BR')} linhas · ${s.headers.length} cols`;
-    return `<div class="sheet-item ${i === S.sheetIdx ? 'active' : ''} ${empty ? 'empty' : ''}">
-      <input type="checkbox" ${s.include ? 'checked' : ''} ${empty ? 'disabled' : ''} onchange="setSheetInclude(${i},this.checked)" title="Incluir na geração">
-      <div class="sheet-info" ${empty ? '' : `onclick="activateSheet(${i})"`} title="${esc(s.name)}">
-        <div class="sheet-name">${esc(s.name)}${s.hidden ? '<span class="sheet-tag">oculta</span>' : ''}</div>
-        <div class="sheet-meta">${meta}</div>
-      </div>
-      <input type="text" class="sheet-tbl" data-i="${i}" value="${esc(s.table)}" placeholder="Tabela" oninput="setSheetTable(${i},this.value)" ${empty ? 'disabled' : ''}>
+    const meta = empty ? 'vazia' : `${s.rows.length.toLocaleString('pt-BR')} linhas${s.table ? ` · ${s.table}` : ''}`;
+    return `<div class="sheet-item ${i === S.sheetIdx ? 'active' : ''} ${empty ? 'empty' : ''} ${s.include ? '' : 'off'}">
+      <input type="checkbox" ${s.include ? 'checked' : ''} ${empty ? 'disabled' : ''} onchange="setSheetInclude(${i},this.checked)" title="Incluir na geração" aria-label="Incluir ${esc(s.name)} na geração">
+      <button class="sheet-info" ${empty ? 'disabled' : `onclick="activateSheet(${i})"`} title="${esc(s.name)}">
+        <span class="sheet-name"><span class="sheet-dot" aria-hidden="true"></span>${esc(s.name)}${s.hidden ? '<span class="sheet-tag">oculta</span>' : ''}</span>
+        <span class="sheet-meta">${esc(meta)}</span>
+      </button>
     </div>`;
   }).join('');
 }
@@ -1547,7 +1470,9 @@ function renderColMap() {
     </div>
   `;
   document.getElementById('prevBadge').textContent = S.rows.length.toLocaleString('pt-BR') + ' linhas';
+  document.getElementById('mapBadge').textContent = S.colCfg.filter(c => c.type !== 'SKIP').length + ' cols';
   updateSelInOptions();
+  updateWsHead();
 }
 
 function updateSelInOptions() {
@@ -1874,6 +1799,7 @@ function setOp(op) {
   if (op !== 'SELECT') { selIn.checked = false; selIn.disabled = true; }
   else selIn.disabled = false;
   updateSelInOptions();
+  updateExecSummary();
 
   if (S.headers.length) renderColMap();
 }
@@ -2596,6 +2522,50 @@ function renderPreview() {
   wrap.classList.remove('hidden');
   document.getElementById('prevEmpty').classList.add('hidden');
   document.getElementById('prevBadge').textContent = S.rows.length.toLocaleString('pt-BR') + ' linhas';
+  updateWsHead();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CABEÇALHO DA ÁREA DE TRABALHO E RESUMO DE EXECUÇÃO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function updateWsHead() {
+  const title = document.getElementById('wsTitle'), sub = document.getElementById('wsSub'), chips = document.getElementById('wsChips');
+  document.getElementById('dropZone').classList.toggle('hidden', !!S.headers.length);
+  if (!S.headers.length) {
+    title.textContent = 'Nenhum arquivo carregado';
+    sub.textContent = 'Importe um CSV ou Excel para começar';
+    chips.innerHTML = '';
+    return;
+  }
+  const sch = document.getElementById('schemaIn').value.trim(), tbl = document.getElementById('tableIn').value.trim();
+  const dest = tbl ? (sch ? `${sch}.${tbl}` : tbl) : 'defina a tabela de destino';
+  const sh = isXlsx() ? S.sheets[S.sheetIdx] : null;
+  title.textContent = sh ? sh.name : S.fileName;
+  sub.innerHTML = `${S.rows.length.toLocaleString('pt-BR')} linhas${sh ? ` · cabeçalho na linha ${sh.hdrRow}` : ''} → <code>${esc(dest)}</code>`;
+  const c = [];
+  const fns = countActiveFns();
+  if (fns) c.push(`<span class="chip chip-info">${fns} função(ões)</span>`);
+  const refs = S.colCfg.filter(x => hasRefRule(x)).length;
+  if (refs && S.op === 'INSERT') c.push(`<span class="chip chip-info">${refs} regra(s) no banco</span>`);
+  if (S.colCfg.some(x => (x.ref && refLooksInverted(x.ref)) || hasDeadRefRule(x))) c.push('<span class="chip chip-err">regra para revisar (🔗 laranja)</span>');
+  if (sh && !sh.include) c.push('<span class="chip chip-warn">fora da geração</span>');
+  if (document.getElementById('optRF').value === 'skip' && S.op === 'INSERT') c.push('<span class="chip chip-err">modo teste: pular recusadas</span>');
+  chips.innerHTML = c.join('');
+}
+
+function updateExecSummary() {
+  const v = id => document.getElementById(id);
+  const rb = v('optRB').checked, skip = v('optRF').value === 'skip';
+  const rows = [
+    ['Transação', rb ? (v('optTX').value === 'sheet' ? 'uma por aba' : 'uma para tudo') : (v('optTR').checked ? 'BEGIN TRAN / COMMIT' : 'nenhuma')],
+    ['ROLLBACK automático', rb ? 'ligado' : 'desligado'],
+    ['Linha recusada', skip ? 'pular (só teste)' : 'desfazer a aba', skip],
+    ['Campo obrigatório vazio', v('optSK').checked ? 'ignorar a linha' : 'só avisar'],
+    ['Registros por bloco', v('optBS').value + (v('optMV').checked ? ' · multi-values' : '')]
+  ];
+  if (v('optGO').checked) rows.push(['GO', 'a cada ' + v('optGN').value]);
+  v('execSummary').innerHTML = rows.map(([k, val, warn]) =>
+    `<div class="sum-row ${warn ? 'warn' : ''}"><span>${k}</span><span>${esc(val)}</span></div>`).join('');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2835,6 +2805,7 @@ function clearRefAndClose() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function switchTab(tab) {
   document.querySelectorAll('.tab[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('tabMap').classList.toggle('active', tab === 'map');
   document.getElementById('tabPreview').classList.toggle('active', tab === 'preview');
   document.getElementById('tabOutput').classList.toggle('active', tab === 'output');
   document.getElementById('tabSkipped').classList.toggle('active', tab === 'skipped');
@@ -2918,6 +2889,7 @@ function applyOpts(data) {
   if (data.ea !== undefined) document.getElementById('optEA').value = data.ea;
   if (data.dv !== undefined) document.getElementById('optDV').value = data.dv;
   toggleMVRow(); toggleGORow(); toggleDefaultRow();
+  updateExecSummary();
 }
 
 function saveTableSchema(tbl = document.getElementById('tableIn').value.trim(), colCfg = S.colCfg, headers = S.headers) {
@@ -2965,8 +2937,9 @@ function checkTableRestore() {
 function onTableInput() {
   const tbl = document.getElementById('tableIn').value.trim();
   updateTblIndicator(tbl);
-  if (isXlsx()) syncActiveSheet();
+  if (isXlsx()) { syncActiveSheet(); renderSheetList(); }
   if (!tbl) hideRestoreBanner();
+  updateWsHead();
 }
 
 function showRestoreBanner(tbl, data) {
@@ -3337,7 +3310,8 @@ function resetFile() {
   document.getElementById('dropZone').classList.remove('hidden');
   document.getElementById('fileLoaded').classList.add('hidden');
   document.getElementById('fileInput').value = '';
-  document.getElementById('colMapBody').innerHTML = '<div class="empty-panel">📥 Importe um arquivo para mapear as colunas</div>';
+  document.getElementById('colMapBody').innerHTML = '<div class="empty-panel">Importe um arquivo para mapear as colunas</div>';
+  document.getElementById('mapBadge').textContent = '0 cols';
   document.getElementById('prevTable').classList.add('hidden');
   document.getElementById('prevEmpty').classList.remove('hidden');
   document.getElementById('sqlOutput').classList.add('hidden');
@@ -3350,7 +3324,8 @@ function resetFile() {
   hideRestoreBanner();
   hideXlsxBanner();
   updateFnCountBadge();
-  switchTab('preview');
+  updateWsHead();
+  switchTab('map');
 }
 
 function resetAll() {
@@ -3377,26 +3352,26 @@ document.getElementById('fileInput').addEventListener('change', function() {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SIDEBAR RESIZE (mínimo = largura padrão)
+// PAINEL LATERAL (Destino / Execução) — redimensionável pela borda esquerda; mínimo = padrão
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const LEFT_MIN = 370;
-const LEFT_KEY = 'csv2sql_ui__leftWidth';
+const SIDE_MIN = 380;
+const SIDE_KEY = 'csv2sql_ui__sideWidth';
 
-function setLeftWidth(w) {
-  const max = Math.max(LEFT_MIN, window.innerWidth - 320);  // mantém espaço para o painel direito
-  w = Math.round(Math.min(Math.max(w, LEFT_MIN), max));
-  document.documentElement.style.setProperty('--left-w', w + 'px');
+function setSideWidth(w) {
+  const max = Math.max(SIDE_MIN, window.innerWidth - 640);  // mantém espaço para o mapeamento
+  w = Math.round(Math.min(Math.max(w, SIDE_MIN), max));
+  document.documentElement.style.setProperty('--side-w', w + 'px');
   return w;
 }
 
 (function initResizer() {
   const handle = document.getElementById('panelResizer');
-  const panel  = document.querySelector('.left-panel');
+  const panel  = document.querySelector('.ws-side');
   let saved = null;
-  try { saved = parseInt(localStorage.getItem(LEFT_KEY)); } catch {}
-  if (saved) setLeftWidth(saved);
+  try { saved = parseInt(localStorage.getItem(SIDE_KEY)); } catch {}
+  if (saved) setSideWidth(saved);
 
-  const save = w => { try { localStorage.setItem(LEFT_KEY, w); } catch {} };
+  const save = w => { try { localStorage.setItem(SIDE_KEY, w); } catch {} };
 
   handle.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -3405,7 +3380,7 @@ function setLeftWidth(w) {
     document.body.classList.add('resizing');
     const startX = e.clientX, startW = panel.getBoundingClientRect().width;
     let w = startW;
-    const move = ev => { w = setLeftWidth(startW + ev.clientX - startX); };
+    const move = ev => { w = setSideWidth(startW - (ev.clientX - startX)); };
     const up = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
@@ -3418,12 +3393,18 @@ function setLeftWidth(w) {
     handle.addEventListener('pointerup', up);
     handle.addEventListener('pointercancel', up);
   });
-  handle.addEventListener('dblclick', () => save(setLeftWidth(LEFT_MIN)));
+  handle.addEventListener('dblclick', () => save(setSideWidth(SIDE_MIN)));
   window.addEventListener('resize', () => {
-    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--left-w'));
-    if (cur) setLeftWidth(cur);
+    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--side-w'));
+    if (cur) setSideWidth(cur);
   });
 })();
+
+// Resumo de execução e chips do cabeçalho acompanham as opções avançadas
+document.getElementById('advBody').addEventListener('change', () => { updateExecSummary(); updateWsHead(); });
+document.getElementById('advBody').addEventListener('input', updateExecSummary);
+updateExecSummary();
+updateWsHead();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TOAST

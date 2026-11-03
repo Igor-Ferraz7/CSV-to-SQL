@@ -87,13 +87,15 @@ Processamento manual de arquivos CSV para SQL é repetitivo, propenso a erros e 
 
 ## Como usar
 
+A tela tem um cabeçalho (arquivo, operação, perfis e **Gerar SQL**), uma faixa com as abas do Excel, a área de trabalho com as abas **Mapeamento · Preview · SQL · Ignoradas** e, à direita, os cartões **Destino** e **Execução** (este com o resumo das opções e as Opções avançadas). O painel da direita pode ser alargado arrastando a borda.
+
 1. Acesse a ferramenta no navegador
-2. Carregue um arquivo CSV ou Excel ou arraste-o para a zona de drop
-3. CSV: selecione o delimitador (auto-detectado por padrão). Excel: marque as abas a gerar e clique em cada uma para configurá-la
-4. Configure o schema e nome da tabela de destino (no Excel, uma tabela por aba)
-5. Escolha o tipo de operação SQL (INSERT, UPDATE, etc)
-6. Revise e ajuste os tipos de coluna conforme necessário
-7. Copie o SQL gerado e execute em seu banco de dados
+2. Carregue um arquivo CSV ou Excel clicando ou arrastando para a área central
+3. CSV: confira o delimitador no cartão Destino (auto-detectado por padrão). Excel: marque na faixa de abas as que vão para o SQL e clique numa aba para configurá-la
+4. No cartão Destino, informe o schema e a tabela (no Excel, uma tabela por aba) e, se preciso, a linha do cabeçalho
+5. Escolha a operação SQL no cabeçalho (INSERT, UPDATE, etc)
+6. Revise o mapeamento: tipos, funções (ƒ), regras no banco (🔗) e campos obrigatórios
+7. Clique em Gerar SQL, copie ou exporte e execute no banco
 
 ## Requisitos
 

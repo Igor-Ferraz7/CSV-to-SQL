@@ -1917,6 +1917,26 @@ function refTest(c, val) {
   return r.mode === 'missing' ? `${val} IS NOT NULL AND NOT ${ex(w)}` : ex(w);
 }
 
+// Motivo de uma linha barrada pela regra, decidido no banco linha a linha: "não cadastrado" quando o
+// código nem existe na referência, o motivo da regra + a condição quando existe e atende a ela, e
+// "motivo desconhecido" se nenhum dos dois casos se confirmar (não deveria acontecer).
+function refReason(c, val) {
+  const r = c.ref;
+  const cond = r.cond && r.cond.trim() ? oneLineSql(r.cond.trim()) : '';
+  const t = r.table.trim(), key = `r.${qid(r.col.trim())} = ${val}`;
+  const ex = w => `EXISTS (SELECT 1 FROM ${t} r WHERE ${w})`;
+  const motivo = r.motivo || 'Regra de referência';
+  const notFound = nstr(`Não cadastrado em ${t} (${r.col.trim()})`);
+  const unknown = nstr(`Motivo desconhecido (regra: ${motivo})`);
+  if (r.mode === 'exists')
+    return nstr(cond ? `${motivo} — atende à condição ${cond}` : `${motivo} — encontrado em ${t}`);
+  if (!cond) return notFound;
+  if (r.mode === 'missingOr')
+    return `CASE WHEN NOT ${ex(key)} THEN ${notFound} WHEN ${ex(`${key} AND (${cond})`)} THEN ${nstr(`${motivo} — atende à condição ${cond}`)} ELSE ${unknown} END`;
+  // 'missing' com condição: existe, mas nenhum registro atende à condição de "válido"
+  return `CASE WHEN NOT ${ex(key)} THEN ${notFound} WHEN NOT ${ex(`${key} AND (${cond})`)} THEN ${nstr(`${motivo} — não atende à condição ${cond}`)} ELSE ${unknown} END`;
+}
+
 // A regra em português: o que é ignorado e o que entra
 function refExplainHTML(r) {
   const t = `<code>${esc(r.table)}</code>`, cond = r.cond ? `<code>${esc(r.cond)}</code>` : '';
@@ -2007,7 +2027,7 @@ function buildSQLFor(L, t, table, o) {
       L.push(chunk.map((r, j) => '  (' + [lineNo(i0 + j), ...staged.map(c => fmtVal(getVal(r, c, i0 + j), c.type))].join(', ') + ')').join(',\n'));
       L.push(`) AS v (csv2sql_linha${staged.length ? ', ' + staged.map(alias).join(', ') : ''});`);
       refCols.forEach(c => L.push(
-        `INSERT INTO #csv2sql_ignoradas (aba, tabela, linha, motivo, coluna, valor) SELECT ${nstr(t.label || '')}, ${nstr(table)}, s.csv2sql_linha, ${nstr(c.ref.motivo || 'Regra de referência')}, ${nstr(c.dbName)}, CONVERT(NVARCHAR(4000), s.${alias(c)}) FROM ${st} s WHERE ${refTest(c, `s.${alias(c)}`)};`));
+        `INSERT INTO #csv2sql_ignoradas (aba, tabela, linha, motivo, coluna, valor) SELECT ${nstr(t.label || '')}, ${nstr(table)}, s.csv2sql_linha, ${refReason(c, `s.${alias(c)}`)}, ${nstr(c.dbName)}, CONVERT(NVARCHAR(4000), s.${alias(c)}) FROM ${st} s WHERE ${refTest(c, `s.${alias(c)}`)};`));
       const seqCols = active.filter(isSeqMax).map(c => [c, o.seqVar(L, table, c)]);
       // o sequencial avança só pelo que entrou de fato
       const seqAdvance = seqCols.length
@@ -2195,10 +2215,22 @@ function wrapTryCatch(head, L, units, sch, tail = [], noTx = false) {
   });
   const txName = (k, u) => N > 1 ? `transação ${k}/${N} (${u.label})` : 'a transação';
   // ERROR_LINE() conta a partir do início do lote; somando o deslocamento vira a linha do script
+  // Aba e tabela para o registro do erro no resultado final (vazio quando a transação junta várias abas)
+  const where = u => {
+    const one = u.targets.length === 1 ? u.targets[0] : null;
+    return { aba: nstr(one?.label || ''), tabela: nstr(one ? (sch ? `${sch}.${one.tbl}` : one.tbl) : u.label) };
+  };
+  const logErr = (u, prefix, msgSql) => {
+    const w = where(u);
+    return `INSERT INTO #csv2sql_ignoradas (aba, tabela, linha, motivo, coluna, valor) VALUES (${w.aba}, ${w.tabela}, NULL, LEFT(CONCAT(${nstr(prefix)}, ${msgSql}), 2000), N'', N'');`;
+  };
   const block = (k, u, ctxText, body) => {
     const offset = batchStart;
     push('BEGIN TRY', ...body, 'END TRY', 'BEGIN CATCH',
       '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+      // depois do ROLLBACK, para o registro não ser desfeito junto
+      '  ' + logErr(u, noTx ? 'Erro na aba (o restante não foi processado): '
+        : `${u.targets.length > 1 ? 'Carga desfeita' : 'Aba desfeita'} (ROLLBACK) — erro do banco: `, 'RTRIM(ERROR_MESSAGE())'),
       `  IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k}) INSERT INTO #csv2sql_falhas VALUES (${k});`,
       `  DECLARE @csv2sql_err NVARCHAR(2047) = CONCAT(N'Erro ', ERROR_NUMBER(), N' (severidade ', ERROR_SEVERITY(), N', estado ', ERROR_STATE(), N') na linha ', ERROR_LINE() + ${offset}, N' do script — ', ${nstr(ctxText)}, N': ', ERROR_MESSAGE());`,
       `  PRINT ${nstr(noTx
@@ -2248,6 +2280,7 @@ function wrapTryCatch(head, L, units, sch, tail = [], noTx = false) {
         `ELSE IF NOT EXISTS (SELECT 1 FROM #csv2sql_falhas WHERE unidade = ${k})`,
         'BEGIN',
         `  INSERT INTO #csv2sql_falhas VALUES (${k});`,
+        '  ' + logErr(u, 'Erro na aba: ', "N'um lote não foi executado (erro de compilação — veja as mensagens)'"),
         `  RAISERROR(${nstr(`❌ ${u.label}: um lote não foi executado (veja o erro acima, ex.: erro de compilação); as linhas já gravadas permanecem.`)}, 16, 1);`,
         'END',
         'GO');
@@ -2270,6 +2303,7 @@ function wrapTryCatch(head, L, units, sch, tail = [], noTx = false) {
       `    INSERT INTO #csv2sql_falhas VALUES (${k});`,
       '    DECLARE @csv2sql_lote INT = 1;',
       `    WHILE EXISTS (SELECT 1 FROM #csv2sql_lotes WHERE unidade = ${k} AND lote = @csv2sql_lote) SET @csv2sql_lote += 1;`,
+      '    ' + logErr(u, 'Aba desfeita (ROLLBACK) — ', "CONCAT(N'o lote ', @csv2sql_lote, N' não foi executado (erro de compilação — veja as mensagens)')"),
       `    RAISERROR(${nstr(`❌ ${N > 1 ? `${u.label}: ` : ''}o lote %d não foi executado (veja o erro acima, ex.: erro de compilação). ROLLBACK executado, nada desta transação foi gravado.`).replace(/%(?!d)/g, '%%')}, 16, 1, @csv2sql_lote);`,
       '  END',
       'END',
@@ -2451,21 +2485,21 @@ function generateSQL() {
     if (!rb && tr) warns.push('-- ⚠ BEGIN TRAN / COMMIT ignorado: no modo pular cada linha tem a própria transação');
   }
 
-  // Regras de referência / modo pular: as linhas barradas ou recusadas no banco são listadas no fim
-  // (para importar no gerador)
+  // Regras de referência / modo pular / ROLLBACK automático: as linhas barradas ou recusadas e os
+  // erros que desfizeram uma aba são listados no fim (para importar no gerador)
   const hasRef = S.op === 'INSERT' && targets.some(t => t.colCfg.some(hasRefRule));
-  const hasLog = hasRef || skipRef;
+  const hasLog = hasRef || skipRef || rb;
   const refHead = hasLog ? [
     "IF OBJECT_ID(N'tempdb..#csv2sql_ignoradas') IS NOT NULL DROP TABLE #csv2sql_ignoradas;",
     'CREATE TABLE #csv2sql_ignoradas (id INT IDENTITY PRIMARY KEY, aba NVARCHAR(128), tabela NVARCHAR(300), linha INT, motivo NVARCHAR(2000), coluna NVARCHAR(128), valor NVARCHAR(4000));'
   ] : [];
   const refTail = hasLog ? ['',
-    '-- ── Linhas ignoradas pelas regras de referência / recusadas pelo banco (copie o resultado com',
-    '--    cabeçalhos e use "📥 Importar do banco" na aba 🚫 Ignoradas do gerador)',
+    '-- ── Linhas ignoradas pelas regras de referência, recusadas pelo banco e erros que desfizeram',
+    '--    uma aba (copie o resultado com cabeçalhos e use "📥 Importar do banco" na aba 🚫 Ignoradas)',
     'IF EXISTS (SELECT 1 FROM #csv2sql_ignoradas)',
     'BEGIN',
     '  DECLARE @csv2sql_ign INT = (SELECT COUNT(*) FROM #csv2sql_ignoradas);',
-    "  PRINT CONCAT(N'🚫 ', @csv2sql_ign, N' linha(s) ignorada(s) ou recusada(s) — veja o resultado.');",
+    "  PRINT CONCAT(N'🚫 ', @csv2sql_ign, N' registro(s) de linhas ignoradas/recusadas ou erros — veja o resultado.');",
     '  SELECT aba AS Aba, tabela AS Tabela, linha AS Linha, motivo AS Motivo, coluna AS Coluna, valor AS Valor FROM #csv2sql_ignoradas ORDER BY id;',
     'END',
     'DROP TABLE #csv2sql_ignoradas;'
@@ -2607,7 +2641,7 @@ function renderSkipped() {
         <div style="overflow:auto">
           <table class="preview-table">
             <thead><tr><th>Linha</th><th>Motivo</th>${g.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-            <tbody>${g.rows.slice(0, SKIP_SHOW).map(r => `<tr><td>${r.num}</td><td>${esc(r.motivo)}</td>${idx.map(i =>
+            <tbody>${g.rows.slice(0, SKIP_SHOW).map(r => `<tr><td>${r.num ?? "—"}</td><td>${esc(r.motivo)}</td>${idx.map(i =>
               `<td class="${r.missIdx.includes(i) ? 'miss' : ''}">${esc(r.cells[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody>
           </table>
         </div>
@@ -2626,7 +2660,7 @@ async function exportSkipped() {
   const used = new Set();
   groups.forEach(g => {
     const aoa = [['Linha no arquivo', 'Tabela destino', 'Motivo', ...g.headers],
-      ...g.rows.map(r => [r.num, g.tbl, r.motivo, ...g.headers.map((_, i) => r.cells[i] ?? '')])];
+      ...g.rows.map(r => [r.num ?? "", g.tbl, r.motivo, ...g.headers.map((_, i) => r.cells[i] ?? '')])];
     // nome de aba no Excel: até 31 caracteres, sem : \ / ? * [ ] e único
     const base = (g.label || 'Ignoradas').replace(/[:\\/?*\[\]]/g, '_').slice(0, 31) || 'Ignoradas';
     let name = base, n = 2;
@@ -2661,13 +2695,16 @@ function importDbIgnored() {
     if (p.length < 4) return;
     // recusadas pelo banco vêm sem coluna/valor (o SSMS pode copiar como vazio ou "NULL")
     const [aba, tabela, linha, motivo, coluna, valor] = p.concat(['', '']).map(x => x === 'NULL' ? '' : x);
-    const num = parseInt(linha);
-    if (!Number.isInteger(num)) return;  // cabeçalho ou lixo
+    if (/^aba$/i.test(aba) && /^tabela$/i.test(tabela)) return;  // cabeçalho
+    // erro que desfez uma aba vem sem nº de linha (não dá para saber qual linha o banco recusou)
+    const num = linha === '' ? null : parseInt(linha);
+    if (num !== null && !Number.isInteger(num)) return;  // lixo
 
-    const sh = isXlsx() ? (aba ? S.sheets.find(s => s.name === aba) : S.sheets[S.sheetIdx]) : null;
-    if (isXlsx() && !sh) { unmatched++; return; }
-    const src = sh || { headers: S.headers, rows: S.rows, rowNums: S.rowNums, colCfg: S.colCfg };
-    const ri = (src.rowNums || []).indexOf(num);
+    const sh = isXlsx() ? (aba ? S.sheets.find(s => s.name === aba) : (num === null ? null : S.sheets[S.sheetIdx])) : null;
+    if (isXlsx() && !sh && num !== null) { unmatched++; return; }
+    const src = sh || (isXlsx() ? { headers: [], rows: [], rowNums: [], colCfg: [] }
+      : { headers: S.headers, rows: S.rows, rowNums: S.rowNums, colCfg: S.colCfg });
+    const ri = num === null ? -1 : (src.rowNums || []).indexOf(num);
     const tbl = tabela.replace(/^.*\./, '');
     const label = aba || null;
 
@@ -2675,7 +2712,8 @@ function importDbIgnored() {
     if (!g) { g = { label, tbl, headers: src.headers, rows: [] }; S.skipped.push(g); }
     const text = coluna ? `${motivo}: ${coluna} = ${valor}` : motivo;
     const ci = src.colCfg.find(c => c.dbName === coluna)?.csvIndex;
-    const ex = g.rows.find(r => r.num === num);
+    const ex = num === null ? g.rows.find(r => r.num === null && r.motivo === text) : g.rows.find(r => r.num === num);
+    if (ex && num === null) return;  // mesmo erro colado de novo
     if (ex) {
       if (ex.motivo.split(' · ').includes(text)) return;
       ex.motivo += ` · ${text}`;
@@ -2683,10 +2721,11 @@ function importDbIgnored() {
     } else {
       g.rows.push({ num, motivo: text, missIdx: ci >= 0 ? [ci] : [], cells: ri >= 0 ? src.rows[ri] : [] });
     }
-    if (ri < 0) unmatched++;
+    if (ri < 0 && num !== null) unmatched++;
     added++;
   });
-  S.skipped.forEach(g => g.rows.sort((a, b) => a.num - b.num));
+  // erros da aba (sem nº de linha) primeiro, depois as linhas em ordem
+  S.skipped.forEach(g => g.rows.sort((a, b) => (a.num ?? -1) - (b.num ?? -1)));
   closeIgnImport();
   renderSkipped();
   switchTab('skipped');
